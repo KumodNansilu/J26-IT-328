@@ -1,152 +1,121 @@
 """
-GMU (Gated Multimodal Unit) Fusion Model.
+Gated Multimodal Fusion Engine (GMU) - PyTorch implementation.
 
-This module implements a lightweight Gated Multimodal Unit that fuses the
-three unimodal sentiment scores (TBS, VBS, ABS) into a single
-Decision Sentiment Index (DSI) in [0, 1].
+This module implements the late-stage decision-level fusion model that
+combines three unimodal scores (TBS, VBS, ABS) and the Discordance Delta (Δ)
+into a single Depression Severity Index (DSI).
 
-The GMU learns modality-specific gating weights so that the most reliable
-modality dominates the fused output for each sample.
+Architecture:
+    Input:  [TBS, VBS, ABS, Δ]  (4 features)
+    Gating: nn.Linear(4, 3) -> nn.Softmax(dim=-1) -> [w_text, w_video, w_audio]
+    Fusion: DSI = (w_text * TBS) + (w_video * VBS) + (w_audio * ABS)
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .discordance import calculate_discordance_delta
 
-class GMUFusionModel(nn.Module):
+
+class GatedMultimodalFusionEngine(nn.Module):
     """
-    Gated Multimodal Unit for fusing TBS, VBS and ABS into a DSI.
+    Gated Multimodal Fusion Engine.
 
-    Architecture
-    ------------
-    - Three modality encoders (one per modality), each a small MLP.
-    - A gating network that produces per-modality weights.
-    - A weighted sum of the encoded modalities followed by a sigmoid
-      to produce the final DSI in [0, 1].
+    Ingests [TBS, VBS, ABS, Δ] and produces:
+        - dsi     : final Depression Severity Index in [0, 1]
+        - weights : dynamic modality weights [w_text, w_video, w_audio]
+        - delta   : the Discordance Delta used as the 4th input
     """
 
-    def __init__(
-        self,
-        input_dim: int = 1,
-        hidden_dim: int = 16,
-        output_dim: int = 1,
-    ) -> None:
-        """
-        Initialize the GMU fusion model.
-
-        Parameters
-        ----------
-        input_dim : int
-            Dimensionality of each unimodal score (default 1).
-        hidden_dim : int
-            Hidden layer size for the encoders and gating network.
-        output_dim : int
-            Dimensionality of the fused DSI (default 1).
-        """
+    def __init__(self) -> None:
+        """Initialize the gating layer."""
         super().__init__()
 
-        # Modality encoders
-        self.text_encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-        self.vision_encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-        self.audio_encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-
-        # Gating network
-        self.gate_network = nn.Sequential(
-            nn.Linear(input_dim * 3, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 3),
-        )
-
-        # Final fusion layer
-        self.fusion_layer = nn.Linear(hidden_dim, output_dim)
+        # Gating network: 4 inputs (TBS, VBS, ABS, Δ) -> 3 modality weights
+        self.gate = nn.Linear(4, 3)
 
     def forward(
         self,
         tbs: torch.Tensor,
         vbs: torch.Tensor,
         abs_: torch.Tensor,
-    ) -> torch.Tensor:
+        delta: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Forward pass fusing the three unimodal scores.
+        Forward pass.
 
         Parameters
         ----------
         tbs : torch.Tensor
-            Text-Based Sentiment scores, shape (batch, 1).
+            Text-Based Score, shape (batch, 1).
         vbs : torch.Tensor
-            Visual-Based Sentiment scores, shape (batch, 1).
+            Video-Based Score, shape (batch, 1).
         abs_ : torch.Tensor
-            Audio-Based Sentiment scores, shape (batch, 1).
+            Audio-Based Score, shape (batch, 1).
+        delta : torch.Tensor
+            Discordance Delta, shape (batch, 1).
 
         Returns
         -------
-        torch.Tensor
-            Fused DSI scores in [0, 1], shape (batch, 1).
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            (dsi, weights, delta) where:
+                - dsi     : shape (batch, 1), in [0, 1]
+                - weights : shape (batch, 3), sums to 1.0
+                - delta   : shape (batch, 1), the input delta
         """
-        # Encode each modality
-        h_text = self.text_encoder(tbs)
-        h_vision = self.vision_encoder(vbs)
-        h_audio = self.audio_encoder(abs_)
+        # Concatenate inputs: [TBS, VBS, ABS, Δ]
+        x = torch.cat([tbs, vbs, abs_, delta], dim=-1)  # (batch, 4)
 
-        # Compute gating weights from the concatenated raw scores
-        concat_raw = torch.cat([tbs, vbs, abs_], dim=-1)
-        gate_logits = self.gate_network(concat_raw)
-        gate_weights = F.softmax(gate_logits, dim=-1)  # (batch, 3)
+        # Compute gating weights
+        gate_logits = self.gate(x)                      # (batch, 3)
+        weights = F.softmax(gate_logits, dim=-1)        # (batch, 3)
 
-        # Weighted sum of encoded modalities
-        fused = (
-            gate_weights[:, 0:1] * h_text
-            + gate_weights[:, 1:2] * h_vision
-            + gate_weights[:, 2:3] * h_audio
+        # Weighted fusion: DSI = w_text*TBS + w_video*VBS + w_audio*ABS
+        dsi = (
+            weights[:, 0:1] * tbs
+            + weights[:, 1:2] * vbs
+            + weights[:, 2:3] * abs_
         )
 
-        # Final projection to DSI
-        dsi = torch.sigmoid(self.fusion_layer(fused))
-        return dsi
+        return dsi, weights, delta
 
+    def predict(
+        self,
+        tbs: float,
+        vbs: float,
+        abs_: float,
+    ) -> tuple[float, list[float], float]:
+        """
+        Run a single inference and return (dsi, weights, delta).
 
-def predict_dsi(
-    model: GMUFusionModel,
-    tbs: float,
-    vbs: float,
-    abs_: float,
-) -> float:
-    """
-    Run a single inference through the trained GMU model.
+        Parameters
+        ----------
+        tbs : float
+            Text-Based Score in [0, 1].
+        vbs : float
+            Video-Based Score in [0, 1].
+        abs_ : float
+            Audio-Based Score in [0, 1].
 
-    Parameters
-    ----------
-    model : GMUFusionModel
-        A trained GMU fusion model.
-    tbs : float
-        Text-Based Sentiment score in [0, 1].
-    vbs : float
-        Visual-Based Sentiment score in [0, 1].
-    abs_ : float
-        Audio-Based Sentiment score in [0, 1].
+        Returns
+        -------
+        tuple[float, list[float], float]
+            (dsi, [w_text, w_video, w_audio], delta).
+        """
+        delta = calculate_discordance_delta(tbs, vbs, abs_)
 
-    Returns
-    -------
-    float
-        Fused Decision Sentiment Index (DSI) in [0, 1].
-    """
-    model.eval()
-    with torch.no_grad():
-        tbs_t = torch.tensor([[tbs]], dtype=torch.float32)
-        vbs_t = torch.tensor([[vbs]], dtype=torch.float32)
-        abs_t = torch.tensor([[abs_]], dtype=torch.float32)
-        dsi = model(tbs_t, vbs_t, abs_t)
-    return float(dsi.item())
+        self.eval()
+        with torch.no_grad():
+            tbs_t = torch.tensor([[tbs]], dtype=torch.float32)
+            vbs_t = torch.tensor([[vbs]], dtype=torch.float32)
+            abs_t = torch.tensor([[abs_]], dtype=torch.float32)
+            delta_t = torch.tensor([[delta]], dtype=torch.float32)
+
+            dsi, weights, _ = self.forward(tbs_t, vbs_t, abs_t, delta_t)
+
+        return (
+            float(dsi.item()),
+            [float(w) for w in weights.squeeze(0)],
+            float(delta),
+        )
