@@ -1,21 +1,23 @@
 """
 Severity classification module.
 
-Maps the fused DSI (Depression Severity Index) value to a categorical
-severity level based on standard PHQ-9 thresholds.
+Maps the fused DSI (Depression Severity Index) value in [0, 1] to a
+categorical risk tier based on the configured thresholds.
 """
 
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
+from .config import RED_TIER_THRESHOLD, YELLOW_TIER_THRESHOLD, RISK_TIERS
+
 
 # ---------------------------------------------------------------------------
-# Severity levels
+# Risk tiers
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class SeverityLevel:
-    """Represents a single severity level definition."""
+class RiskTier:
+    """Represents a single risk tier definition."""
     name: str
     min_score: float
     max_score: float
@@ -23,42 +25,27 @@ class SeverityLevel:
     description: str
 
 
-# Standard PHQ-9 severity thresholds
-SEVERITY_LEVELS: List[SeverityLevel] = [
-    SeverityLevel(
-        name="Minimal",
+RISK_TIERS_DEFINITIONS: List[RiskTier] = [
+    RiskTier(
+        name="GREEN",
         min_score=0.0,
-        max_score=4.0,
+        max_score=YELLOW_TIER_THRESHOLD,
         color="#4CAF50",  # Green
-        description="Minimal or no depressive symptoms",
+        description="Low Risk - No significant depressive symptoms detected.",
     ),
-    SeverityLevel(
-        name="Mild",
-        min_score=4.0,
-        max_score=9.0,
-        color="#8BC34A",  # Light green
-        description="Mild depressive symptoms",
+    RiskTier(
+        name="YELLOW",
+        min_score=YELLOW_TIER_THRESHOLD,
+        max_score=RED_TIER_THRESHOLD,
+        color="#FFC107",  # Yellow/Amber
+        description="Moderate Risk - Depressive symptoms may be present. Monitor closely.",
     ),
-    SeverityLevel(
-        name="Moderate",
-        min_score=9.0,
-        max_score=14.0,
-        color="#FFC107",  # Amber
-        description="Moderate depressive symptoms",
-    ),
-    SeverityLevel(
-        name="Moderately Severe",
-        min_score=14.0,
-        max_score=19.0,
-        color="#FF9800",  # Orange
-        description="Moderately severe depressive symptoms",
-    ),
-    SeverityLevel(
-        name="Severe",
-        min_score=19.0,
-        max_score=27.0,
+    RiskTier(
+        name="RED",
+        min_score=RED_TIER_THRESHOLD,
+        max_score=1.0,
         color="#F44336",  # Red
-        description="Severe depressive symptoms",
+        description="High Risk - Significant depressive symptoms detected. Immediate attention required.",
     ),
 ]
 
@@ -67,66 +54,66 @@ SEVERITY_LEVELS: List[SeverityLevel] = [
 # Classification
 # ---------------------------------------------------------------------------
 
-def classify_severity(dsi: float) -> SeverityLevel:
+def classify_risk_tier(dsi: float) -> RiskTier:
     """
-    Classify a DSI score into a severity level.
+    Classify a DSI score into a risk tier.
 
     Parameters
     ----------
     dsi : float
-        The fused Depression Severity Index score (0-27).
+        The fused Depression Severity Index score in [0, 1].
 
     Returns
     -------
-    SeverityLevel
-        The matching severity level definition.
+    RiskTier
+        The matching risk tier definition.
 
     Raises
     ------
     ValueError
-        If the DSI score is outside the valid range [0, 27].
+        If the DSI score is outside the valid range [0, 1].
     """
-    if dsi < 0.0 or dsi > 27.0:
+    if dsi < 0.0 or dsi > 1.0:
         raise ValueError(
-            f"DSI score {dsi:.2f} is outside the valid range [0, 27]."
+            f"DSI score {dsi:.2f} is outside the valid range [0, 1]."
         )
 
-    for level in SEVERITY_LEVELS:
-        if level.min_score <= dsi < level.max_score:
-            return level
+    for tier in RISK_TIERS_DEFINITIONS:
+        if tier.min_score <= dsi < tier.max_score:
+            return tier
 
-    # Handle the exact upper boundary (27.0)
-    return SEVERITY_LEVELS[-1]
+    # Handle the exact upper boundary (1.0)
+    return RISK_TIERS_DEFINITIONS[-1]
 
 
-def get_severity_summary(dsi: float) -> Dict[str, object]:
+def get_risk_summary(dsi: float) -> Dict[str, object]:
     """
     Build a summary dictionary for a given DSI score.
 
     Parameters
     ----------
     dsi : float
-        The fused DSI score.
+        The fused DSI score in [0, 1].
 
     Returns
     -------
     dict
-        Dictionary containing the DSI, severity level name, color,
+        Dictionary containing the DSI, risk tier name, color,
         and description.
     """
-    level = classify_severity(dsi)
+    tier = classify_risk_tier(dsi)
 
     return {
-        "dsi": round(float(dsi), 2),
-        "severity": level.name,
-        "color": level.color,
-        "description": level.description,
+        "dsi": round(float(dsi), 3),
+        "risk_tier": tier.name,
+        "color": tier.color,
+        "description": tier.description,
     }
 
 
-def get_severity_thresholds() -> List[Tuple[str, float, float]]:
+def get_risk_thresholds() -> List[Tuple[str, float, float]]:
     """
-    Return the severity thresholds as a list of tuples.
+    Return the risk tier thresholds as a list of tuples.
 
     Useful for UI gauge configuration.
 
@@ -136,6 +123,6 @@ def get_severity_thresholds() -> List[Tuple[str, float, float]]:
         Each tuple is (name, min_score, max_score).
     """
     return [
-        (level.name, level.min_score, level.max_score)
-        for level in SEVERITY_LEVELS
+        (tier.name, tier.min_score, tier.max_score)
+        for tier in RISK_TIERS_DEFINITIONS
     ]

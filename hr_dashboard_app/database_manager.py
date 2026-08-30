@@ -3,12 +3,19 @@ Database manager for the HR dashboard.
 
 Handles persistence of check-in records, computed DSI scores, and
 alert notifications using SQLite.
+
+Tables:
+    - hr_users : HR personnel login credentials
+    - checkins : Check-in session logs (TBS, VBS, ABS, DSI, Delta, Risk Tier, Masking Alert)
 """
 
 import os
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
+
+from core_fusion_engine.config import DB_PATH
 
 
 class DatabaseManager:
@@ -21,16 +28,17 @@ class DatabaseManager:
         Path to the SQLite database file.
     """
 
-    def __init__(self, db_path: str = "hr_dashboard.db") -> None:
+    def __init__(self, db_path: str | Path = DB_PATH) -> None:
         """
         Initialize the database manager.
 
         Parameters
         ----------
-        db_path : str
+        db_path : str | Path
             Path to the SQLite database file.
         """
-        self.db_path = db_path
+        self.db_path = str(db_path)
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -40,10 +48,25 @@ class DatabaseManager:
         return conn
 
     def _init_db(self) -> None:
-        """Create the necessary tables if they do not exist."""
+        """Create the necessary tables and pre-seed HR login."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
+        # HR users table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hr_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                full_name TEXT,
+                role TEXT DEFAULT 'HR',
+                created_at TEXT
+            )
+            """
+        )
+
+        # Check-ins table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS checkins (
@@ -54,27 +77,69 @@ class DatabaseManager:
                 vbs REAL NOT NULL,
                 abs REAL NOT NULL,
                 dsi REAL NOT NULL,
-                severity TEXT NOT NULL
+                delta REAL NOT NULL,
+                risk_tier TEXT NOT NULL,
+                masking_alert TEXT
             )
             """
         )
 
+        # Pre-seed default HR login
         cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                employee_id TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                dsi REAL NOT NULL,
-                severity TEXT NOT NULL,
-                message TEXT NOT NULL,
-                acknowledged INTEGER DEFAULT 0
-            )
-            """
+            "SELECT COUNT(*) FROM hr_users WHERE username = 'admin@company.com'"
         )
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                """
+                INSERT INTO hr_users (username, password, full_name, role, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "admin@company.com",
+                    "admin123",
+                    "System Administrator",
+                    "HR Admin",
+                    datetime.now().isoformat(),
+                ),
+            )
 
         conn.commit()
         conn.close()
+
+    # ------------------------------------------------------------------
+    # HR User operations
+    # ------------------------------------------------------------------
+
+    def validate_login(self, username: str, password: str) -> Optional[Dict[str, object]]:
+        """
+        Validate HR user credentials.
+
+        Parameters
+        ----------
+        username : str
+            HR user email/username.
+        password : str
+            HR user password.
+
+        Returns
+        -------
+        dict or None
+            User record if credentials are valid, None otherwise.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT * FROM hr_users
+            WHERE username = ? AND password = ?
+            """,
+            (username, password),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
 
     # ------------------------------------------------------------------
     # Check-in operations
@@ -87,7 +152,9 @@ class DatabaseManager:
         vbs: float,
         abs_: float,
         dsi: float,
-        severity: str,
+        delta: float,
+        risk_tier: str,
+        masking_alert: Optional[str] = None,
     ) -> int:
         """
         Save a check-in record.
@@ -97,15 +164,19 @@ class DatabaseManager:
         employee_id : str
             Employee identifier.
         tbs : float
-            Text-based score.
+            Text-based score in [0, 1].
         vbs : float
-            Vision-based score.
+            Vision-based score in [0, 1].
         abs_ : float
-            Audio-based score.
+            Audio-based score in [0, 1].
         dsi : float
-            Fused depression severity index.
-        severity : str
-            Severity level name.
+            Fused Depression Severity Index in [0, 1].
+        delta : float
+            Discordance Delta.
+        risk_tier : str
+            Risk tier: "GREEN", "YELLOW", or "RED".
+        masking_alert : str, optional
+            Masking alert message if |Δ| > 0.50.
 
         Returns
         -------
@@ -120,10 +191,10 @@ class DatabaseManager:
         cursor.execute(
             """
             INSERT INTO checkins
-                (employee_id, timestamp, tbs, vbs, abs, dsi, severity)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (employee_id, timestamp, tbs, vbs, abs, dsi, delta, risk_tier, masking_alert)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (employee_id, timestamp, tbs, vbs, abs_, dsi, severity),
+            (employee_id, timestamp, tbs, vbs, abs_, dsi, delta, risk_tier, masking_alert),
         )
 
         conn.commit()
@@ -180,123 +251,69 @@ class DatabaseManager:
 
         return [dict(row) for row in rows]
 
-    # ------------------------------------------------------------------
-    # Alert operations
-    # ------------------------------------------------------------------
-
-    def save_alert(
-        self,
-        employee_id: str,
-        dsi: float,
-        severity: str,
-        message: str,
-    ) -> int:
+    def get_high_risk_checkins(self, limit: int = 100) -> List[Dict[str, object]]:
         """
-        Save an alert notification.
+        Retrieve check-ins with RED risk tier.
 
         Parameters
         ----------
-        employee_id : str
-            Employee identifier.
-        dsi : float
-            Fused DSI score.
-        severity : str
-            Severity level name.
-        message : str
-            Alert message.
-
-        Returns
-        -------
-        int
-            The ID of the inserted alert.
-        """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        timestamp = datetime.now().isoformat()
-
-        cursor.execute(
-            """
-            INSERT INTO alerts
-                (employee_id, timestamp, dsi, severity, message)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (employee_id, timestamp, dsi, severity, message),
-        )
-
-        conn.commit()
-        alert_id = cursor.lastrowid
-        conn.close()
-
-        return alert_id
-
-    def get_alerts(
-        self,
-        acknowledged: Optional[bool] = None,
-        limit: int = 100,
-    ) -> List[Dict[str, object]]:
-        """
-        Retrieve alert records.
-
-        Parameters
-        ----------
-        acknowledged : bool, optional
-            Filter by acknowledged status.
         limit : int
             Maximum number of records to return.
 
         Returns
         -------
         list of dict
-            List of alert records.
+            List of high-risk check-in records.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        if acknowledged is not None:
-            cursor.execute(
-                """
-                SELECT * FROM alerts
-                WHERE acknowledged = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-                """,
-                (int(acknowledged), limit),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT * FROM alerts
-                ORDER BY timestamp DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
+        cursor.execute(
+            """
+            SELECT * FROM checkins
+            WHERE risk_tier = 'RED'
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
 
         rows = cursor.fetchall()
         conn.close()
 
         return [dict(row) for row in rows]
 
-    def acknowledge_alert(self, alert_id: int) -> None:
+    def get_masking_alerts(self, limit: int = 100) -> List[Dict[str, object]]:
         """
-        Mark an alert as acknowledged.
+        Retrieve check-ins with masking alerts.
 
         Parameters
         ----------
-        alert_id : int
-            ID of the alert to acknowledge.
+        limit : int
+            Maximum number of records to return.
+
+        Returns
+        -------
+        list of dict
+            List of check-in records with masking alerts.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
         cursor.execute(
-            "UPDATE alerts SET acknowledged = 1 WHERE id = ?",
-            (alert_id,),
+            """
+            SELECT * FROM checkins
+            WHERE masking_alert IS NOT NULL
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,),
         )
 
-        conn.commit()
+        rows = cursor.fetchall()
         conn.close()
+
+        return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
     # Statistics
@@ -310,7 +327,7 @@ class DatabaseManager:
         -------
         dict
             Dictionary with total check-ins, average DSI, and
-            severity distribution.
+            risk tier distribution.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -323,23 +340,23 @@ class DatabaseManager:
 
         cursor.execute(
             """
-            SELECT severity, COUNT(*) as count
+            SELECT risk_tier, COUNT(*) as count
             FROM checkins
-            GROUP BY severity
+            GROUP BY risk_tier
             """
         )
-        severity_distribution = {
-            row["severity"]: row["count"] for row in cursor.fetchall()
+        risk_distribution = {
+            row["risk_tier"]: row["count"] for row in cursor.fetchall()
         }
 
-        cursor.execute("SELECT COUNT(*) FROM alerts WHERE acknowledged = 0")
-        pending_alerts = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM checkins WHERE masking_alert IS NOT NULL")
+        masking_alerts = cursor.fetchone()[0]
 
         conn.close()
 
         return {
             "total_checkins": total_checkins,
-            "avg_dsi": round(float(avg_dsi), 2),
-            "severity_distribution": severity_distribution,
-            "pending_alerts": pending_alerts,
+            "avg_dsi": round(float(avg_dsi), 3),
+            "risk_distribution": risk_distribution,
+            "masking_alerts": masking_alerts,
         }

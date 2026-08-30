@@ -5,12 +5,14 @@ The Discordance Delta quantifies the mismatch between the emotional state
 expressed in the employee's text (TBS) and the emotional state inferred
 from their non-verbal cues (VBS and ABS).
 
-    Δ = TBS - (VBS + ABS) / 2
+    Δ = max(VBS, ABS) - TBS
 
-A large positive Δ indicates the employee is masking negative emotions
-with positive text (Traditional Emotional Masking).
-A large negative Δ indicates the employee is forcing composure while
-their text reveals distress (Forced Composure).
+Interpretation:
+    - High positive Δ (> +0.50): Traditional Emotional Masking
+      (Fake Happy Text - text is more positive than non-verbal cues).
+    - High negative Δ (< -0.50): Forced Composure
+      (Distressed Text, Calm Exterior - text is more negative than
+      non-verbal cues).
 """
 
 from typing import Dict, Union
@@ -18,13 +20,15 @@ from typing import Dict, Union
 from .config import MASKING_THRESHOLD, MASKING_ALERTS
 
 
-def compute_discordance_delta(
+def calculate_discordance_delta(
     tbs: float,
     vbs: float,
-    abs_: float,
+    abs_score: float,
 ) -> float:
     """
-    Compute the Discordance Delta (Δ) between text and non-verbal scores.
+    Calculate the Discordance Delta (Δ) between text and non-verbal scores.
+
+    Δ = max(VBS, ABS) - TBS
 
     Parameters
     ----------
@@ -32,7 +36,7 @@ def compute_discordance_delta(
         Text-Based Sentiment score in [0, 1].
     vbs : float
         Visual-Based Sentiment score in [0, 1].
-    abs_ : float
+    abs_score : float
         Audio-Based Sentiment score in [0, 1].
 
     Returns
@@ -40,8 +44,8 @@ def compute_discordance_delta(
     float
         Discordance Delta (Δ) in [-1, 1].
     """
-    non_verbal_mean = (vbs + abs_) / 2.0
-    return tbs - non_verbal_mean
+    non_verbal_max = max(vbs, abs_score)
+    return non_verbal_max - tbs
 
 
 def classify_masking(delta: float) -> Dict[str, Union[str, float, bool]]:
@@ -51,7 +55,7 @@ def classify_masking(delta: float) -> Dict[str, Union[str, float, bool]]:
     Parameters
     ----------
     delta : float
-        Discordance Delta (Δ) computed by :func:`compute_discordance_delta`.
+        Discordance Delta (Δ) computed by :func:`calculate_discordance_delta`.
 
     Returns
     -------

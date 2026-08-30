@@ -1,396 +1,415 @@
 """
-Main application entry point for the HR dashboard.
+PySide6 Desktop UI for the HR Dashboard.
 
-Provides a Streamlit-based interface for monitoring employee
-depression severity using the multimodal fusion engine.
+Features:
+    a. Login Window validating against hr_users table
+    b. Simulator Panel to manually test TBS, VBS, ABS inputs
+    c. Visual DSI Gauge displaying Risk Tiers (Green/Yellow/Red)
+    d. Dynamic Weight Breakdown Panel showing % weights
+    e. Warning Banner triggered when |Δ| > 0.50
+    f. Audit Log Table displaying historical DB records
 """
 
 import os
 import sys
-from typing import Dict, List, Optional
+from pathlib import Path
 
-import streamlit as st
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Ensure project root is on the path
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QDoubleSpinBox,
+    QGroupBox,
+    QMessageBox,
+    QSplitter,
+    QProgressBar,
+    QFrame,
+    QDialog,
+    QFormLayout,
+)
 
-from core_fusion_engine.config import FusionConfig
-from core_fusion_engine.discordance import DiscordanceDetector
-from core_fusion_engine.fusion_model import MultimodalFusionEngine
-from core_fusion_engine.severity import SeverityClassifier
+from core_fusion_engine.config import (
+    MASKING_THRESHOLD,
+    RED_TIER_THRESHOLD,
+    YELLOW_TIER_THRESHOLD,
+    MODEL_WEIGHTS_PATH,
+)
+from core_fusion_engine.discordance import calculate_discordance_delta, classify_masking
+from core_fusion_engine.fusion_model import GatedMultimodalFusionEngine
+from core_fusion_engine.severity import classify_risk_tier
 from hr_dashboard_app.database_manager import DatabaseManager
 from hr_dashboard_app.controllers.alert_controller import AlertController
-from hr_dashboard_app.ui_components.risk_gauge import render_risk_gauge
-from hr_dashboard_app.ui_components.session_table import render_session_table
+from hr_dashboard_app.ui_components.risk_gauge import RiskGauge
+from hr_dashboard_app.ui_components.session_table import SessionTable
 
 
-# ----------------------------------------------------------------------
-# Page configuration
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Login Dialog
+# ---------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="Employee Mental Health Dashboard",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+class LoginDialog(QDialog):
+    """Login window validating against the hr_users table."""
 
+    def __init__(self, db: DatabaseManager, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("HR Dashboard - Login")
+        self.setFixedSize(400, 250)
 
-# ----------------------------------------------------------------------
-# Cached resources
-# ----------------------------------------------------------------------
+        layout = QVBoxLayout(self)
 
-@st.cache_resource
-def get_fusion_engine() -> MultimodalFusionEngine:
-    """Load the trained multimodal fusion engine."""
-    config = FusionConfig()
-    engine = MultimodalFusionEngine(config)
-    engine.load_weights()
-    return engine
+        # Title
+        title = QLabel("🧠 HR Dashboard Login")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
+        layout.addWidget(title)
 
+        # Form
+        form = QFormLayout()
 
-@st.cache_resource
-def get_discordance_detector() -> DiscordanceDetector:
-    """Create the discordance detector."""
-    return DiscordanceDetector()
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("admin@company.com")
+        form.addRow("Username:", self.username_input)
 
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("admin123")
+        self.password_input.setEchoMode(QLineEdit.Password)
+        form.addRow("Password:", self.password_input)
 
-@st.cache_resource
-def get_severity_classifier() -> SeverityClassifier:
-    """Create the severity classifier."""
-    return SeverityClassifier()
+        layout.addLayout(form)
 
+        # Buttons
+        btn_row = QHBoxLayout()
+        login_btn = QPushButton("Login")
+        login_btn.clicked.connect(self._handle_login)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(login_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
 
-@st.cache_resource
-def get_database() -> DatabaseManager:
-    """Create the database manager."""
-    return DatabaseManager()
+        # Hint
+        hint = QLabel("Default: admin@company.com / admin123")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(hint)
 
+        # Enter key triggers login
+        self.password_input.returnPressed.connect(self._handle_login)
 
-@st.cache_resource
-def get_alert_controller() -> AlertController:
-    """Create the alert controller."""
-    return AlertController(get_database())
+    def _handle_login(self):
+        """Validate credentials and accept if valid."""
+        username = self.username_input.text().strip()
+        password = self.password_input.text().strip()
 
-
-# ----------------------------------------------------------------------
-# Helper functions
-# ----------------------------------------------------------------------
-
-def compute_dsi(
-    tbs: float,
-    vbs: float,
-    abs_: float,
-) -> Dict[str, object]:
-    """
-    Compute the fused DSI and related metadata.
-
-    Parameters
-    ----------
-    tbs : float
-        Text-based score (0-100).
-    vbs : float
-        Vision-based score (0-100).
-    abs_ : float
-        Audio-based score (0-100).
-
-    Returns
-    -------
-    dict
-        Dictionary with dsi, severity, and discordance flag.
-    """
-    engine = get_fusion_engine()
-    detector = get_discordance_detector()
-    classifier = get_severity_classifier()
-
-    # Fuse the three modalities
-    dsi = engine.predict(tbs, vbs, abs_)
-
-    # Classify severity
-    severity = classifier.classify(dsi)
-
-    # Check for discordance
-    discordance = detector.detect(tbs, vbs, abs_)
-
-    return {
-        "dsi": dsi,
-        "severity": severity,
-        "discordance": discordance,
-    }
-
-
-def process_checkin(
-    employee_id: str,
-    tbs: float,
-    vbs: float,
-    abs_: float,
-) -> Dict[str, object]:
-    """
-    Process a check-in: compute DSI, save record, and raise alerts.
-
-    Parameters
-    ----------
-    employee_id : str
-        Employee identifier.
-    tbs : float
-        Text-based score.
-    vbs : float
-        Vision-based score.
-    abs_ : float
-        Audio-based score.
-
-    Returns
-    -------
-    dict
-        Dictionary with the computed results and saved record ID.
-    """
-    db = get_database()
-    alert_controller = get_alert_controller()
-
-    result = compute_dsi(tbs, vbs, abs_)
-
-    # Save the check-in record
-    record_id = db.save_checkin(
-        employee_id=employee_id,
-        tbs=tbs,
-        vbs=vbs,
-        abs_=abs_,
-        dsi=result["dsi"],
-        severity=result["severity"].name,
-    )
-
-    # Raise alert if severity is moderate or higher
-    if result["severity"].name in ("Moderate", "Severe", "Critical"):
-        alert_controller.raise_alert(
-            employee_id=employee_id,
-            dsi=result["dsi"],
-            severity=result["severity"].name,
-            message=(
-                f"Employee {employee_id} shows {result['severity'].name} "
-                f"depression risk (DSI={result['dsi']:.1f})."
-            ),
-        )
-
-    result["record_id"] = record_id
-    return result
-
-
-# ----------------------------------------------------------------------
-# Sidebar
-# ----------------------------------------------------------------------
-
-st.sidebar.title("🧠 HR Dashboard")
-st.sidebar.markdown("---")
-
-page = st.sidebar.radio(
-    "Navigation",
-    ["New Check-in", "Session History", "Alerts", "Summary"],
-)
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Multimodal Depression Screening")
-
-
-# ----------------------------------------------------------------------
-# Page: New Check-in
-# ----------------------------------------------------------------------
-
-if page == "New Check-in":
-    st.title("New Employee Check-in")
-    st.markdown(
-        "Enter the three modality scores to compute the fused "
-        "Depression Severity Index (DSI)."
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        employee_id = st.text_input("Employee ID", value="EMP001")
-
-    with col2:
-        tbs = st.slider(
-            "Text-based Score (TBS)",
-            min_value=0.0,
-            max_value=100.0,
-            value=45.0,
-            step=0.5,
-            help="Score from the NLP text analysis service.",
-        )
-
-    with col3:
-        vbs = st.slider(
-            "Vision-based Score (VBS)",
-            min_value=0.0,
-            max_value=100.0,
-            value=50.0,
-            step=0.5,
-            help="Score from the computer vision service.",
-        )
-
-    abs_ = st.slider(
-        "Audio-based Score (ABS)",
-        min_value=0.0,
-        max_value=100.0,
-        value=40.0,
-        step=0.5,
-        help="Score from the speech analysis service.",
-    )
-
-    if st.button("Compute DSI", type="primary"):
-        if not employee_id.strip():
-            st.error("Please enter a valid Employee ID.")
+        user = self.db.validate_login(username, password)
+        if user:
+            self.accept()
         else:
-            with st.spinner("Computing fused DSI..."):
-                result = process_checkin(
-                    employee_id=employee_id.strip(),
-                    tbs=tbs,
-                    vbs=vbs,
-                    abs_=abs_,
-                )
-
-            st.success(f"Check-in saved (Record #{result['record_id']}).")
-
-            # Display the risk gauge
-            render_risk_gauge(
-                dsi=result["dsi"],
-                severity=result["severity"].name,
+            QMessageBox.warning(
+                self,
+                "Login Failed",
+                "Invalid username or password. Please try again.",
             )
 
-            if result["discordance"]["is_discordant"]:
-                st.warning(
-                    "⚠️ **Modality discordance detected.** "
-                    "The three modality scores disagree significantly. "
-                    "Consider reviewing the individual modality outputs."
+
+# ---------------------------------------------------------------------------
+# Main Window
+# ---------------------------------------------------------------------------
+
+class MainWindow(QMainWindow):
+    """Main HR Dashboard window."""
+
+    def __init__(self, db: DatabaseManager):
+        super().__init__()
+        self.db = db
+        self.alert_controller = AlertController(db=db)
+        self.model = self._load_model()
+
+        self.setWindowTitle("HR Dashboard - Multimodal Depression Detection")
+        self.setMinimumSize(1100, 750)
+
+        self._build_ui()
+
+        # Refresh timer
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh_sessions)
+        self.refresh_timer.start(5000)  # Refresh every 5 seconds
+
+        # Initial data load
+        self.refresh_sessions()
+
+    def _load_model(self) -> GatedMultimodalFusionEngine | None:
+        """Load the trained GMU model if weights exist."""
+        if MODEL_WEIGHTS_PATH.exists():
+            try:
+                import torch
+
+                model = GatedMultimodalFusionEngine()
+                model.load_state_dict(
+                    torch.load(MODEL_WEIGHTS_PATH, map_location="cpu")
                 )
+                model.eval()
+                return model
+            except Exception as e:
+                print(f"Warning: Could not load model: {e}")
+        return None
 
-            st.markdown("### Modality Scores")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("TBS", f"{tbs:.1f}")
-            col2.metric("VBS", f"{vbs:.1f}")
-            col3.metric("ABS", f"{abs_:.1f}")
+    def _build_ui(self):
+        """Build the main UI layout."""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
+        main_layout = QVBoxLayout(central_widget)
 
-# ----------------------------------------------------------------------
-# Page: Session History
-# ----------------------------------------------------------------------
+        # Header
+        header = QLabel("Multimodal Depression Detection - HR Dashboard")
+        header.setStyleSheet("font-size: 20px; font-weight: bold; padding: 10px;")
+        header.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(header)
 
-elif page == "Session History":
-    st.title("Session History")
+        # Splitter for left (simulator) and right (audit log)
+        splitter = QSplitter(Qt.Horizontal)
 
-    db = get_database()
+        # Left panel: Simulator
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
 
-    employee_filter = st.text_input(
-        "Filter by Employee ID (leave empty for all)",
-        value="",
-    )
+        # Risk gauge
+        gauge_group = QGroupBox("Depression Severity Index (DSI)")
+        gauge_layout = QVBoxLayout(gauge_group)
+        self.risk_gauge = RiskGauge()
+        gauge_layout.addWidget(self.risk_gauge)
+        left_layout.addWidget(gauge_group)
 
-    checkins = db.get_checkins(
-        employee_id=employee_filter.strip() or None,
-        limit=200,
-    )
+        # Simulator inputs
+        input_group = QGroupBox("Simulator Panel")
+        input_layout = QVBoxLayout(input_group)
 
-    if not checkins:
-        st.info("No check-in records found.")
-    else:
-        render_session_table(checkins)
+        # Employee ID
+        emp_row = QHBoxLayout()
+        emp_row.addWidget(QLabel("Employee ID:"))
+        self.employee_input = QLineEdit()
+        self.employee_input.setPlaceholderText("e.g., EMP001")
+        emp_row.addWidget(self.employee_input)
+        input_layout.addLayout(emp_row)
 
+        # TBS
+        tbs_row = QHBoxLayout()
+        tbs_row.addWidget(QLabel("TBS:"))
+        self.tbs_input = QDoubleSpinBox()
+        self.tbs_input.setRange(0.0, 1.0)
+        self.tbs_input.setSingleStep(0.05)
+        self.tbs_input.setValue(0.30)
+        tbs_row.addWidget(self.tbs_input)
+        input_layout.addLayout(tbs_row)
 
-# ----------------------------------------------------------------------
-# Page: Alerts
-# ----------------------------------------------------------------------
+        # VBS
+        vbs_row = QHBoxLayout()
+        vbs_row.addWidget(QLabel("VBS:"))
+        self.vbs_input = QDoubleSpinBox()
+        self.vbs_input.setRange(0.0, 1.0)
+        self.vbs_input.setSingleStep(0.05)
+        self.vbs_input.setValue(0.35)
+        vbs_row.addWidget(self.vbs_input)
+        input_layout.addLayout(vbs_row)
 
-elif page == "Alerts":
-    st.title("Alert Notifications")
+        # ABS
+        abs_row = QHBoxLayout()
+        abs_row.addWidget(QLabel("ABS:"))
+        self.abs_input = QDoubleSpinBox()
+        self.abs_input.setRange(0.0, 1.0)
+        self.abs_input.setSingleStep(0.05)
+        self.abs_input.setValue(0.28)
+        abs_row.addWidget(self.abs_input)
+        input_layout.addLayout(abs_row)
 
-    db = get_database()
+        # Evaluate button
+        self.evaluate_btn = QPushButton("Evaluate Session")
+        self.evaluate_btn.clicked.connect(self.evaluate_session)
+        input_layout.addWidget(self.evaluate_btn)
 
-    col1, col2 = st.columns([3, 1])
+        left_layout.addWidget(input_group)
 
-    with col1:
-        show_acknowledged = st.checkbox(
-            "Show acknowledged alerts",
-            value=False,
+        # Weight breakdown panel
+        weight_group = QGroupBox("Dynamic Weight Breakdown")
+        weight_layout = QVBoxLayout(weight_group)
+
+        self.text_weight_bar = self._create_weight_bar("Text (w_text)", QColor(66, 133, 244))
+        self.video_weight_bar = self._create_weight_bar("Video (w_video)", QColor(52, 168, 83))
+        self.audio_weight_bar = self._create_weight_bar("Audio (w_audio)", QColor(251, 188, 5))
+
+        weight_layout.addWidget(self.text_weight_bar)
+        weight_layout.addWidget(self.video_weight_bar)
+        weight_layout.addWidget(self.audio_weight_bar)
+
+        left_layout.addWidget(weight_group)
+
+        # Warning banner
+        self.warning_banner = QLabel("")
+        self.warning_banner.setStyleSheet(
+            "background-color: #FFEBEE; color: #C62828; "
+            "font-weight: bold; padding: 10px; border-radius: 5px;"
         )
+        self.warning_banner.setWordWrap(True)
+        self.warning_banner.hide()
+        left_layout.addWidget(self.warning_banner)
 
-    with col2:
-        if st.button("Refresh"):
-            st.rerun()
+        left_layout.addStretch()
 
-    alerts = db.get_alerts(
-        acknowledged=None if show_acknowledged else False,
-        limit=100,
-    )
+        # Right panel: Audit log table
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
 
-    if not alerts:
-        st.info("No alerts to display.")
-    else:
-        for alert in alerts:
-            with st.container(border=True):
-                col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+        table_group = QGroupBox("Audit Log")
+        table_layout = QVBoxLayout(table_group)
+        self.session_table = SessionTable()
+        table_layout.addWidget(self.session_table)
+        right_layout.addWidget(table_group)
 
-                with col1:
-                    st.markdown(f"**{alert['employee_id']}**")
-                    st.caption(alert["timestamp"])
+        # Refresh button
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_sessions)
+        right_layout.addWidget(refresh_btn)
 
-                with col2:
-                    st.metric("DSI", f"{alert['dsi']:.1f}")
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setSizes([450, 650])
 
-                with col3:
-                    st.markdown(f"**{alert['severity']}**")
+        main_layout.addWidget(splitter)
 
-                with col4:
-                    if not alert["acknowledged"]:
-                        if st.button(
-                            "Acknowledge",
-                            key=f"ack_{alert['id']}",
-                        ):
-                            db.acknowledge_alert(alert["id"])
-                            st.rerun()
-                    else:
-                        st.caption("✅ Acknowledged")
+    def _create_weight_bar(self, label: str, color: QColor) -> QWidget:
+        """Create a labeled progress bar for weight display."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 2, 0, 2)
 
-                st.markdown(alert["message"])
+        label_widget = QLabel(label)
+        label_widget.setFixedWidth(110)
+        layout.addWidget(label_widget)
+
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setValue(0)
+        bar.setTextVisible(True)
+        bar.setFormat("%v%")
+        bar.setStyleSheet(
+            f"QProgressBar {{ border: 1px solid #ccc; border-radius: 3px; }}"
+            f"QProgressBar::chunk {{ background-color: {color.name()}; }}"
+        )
+        layout.addWidget(bar)
+
+        # Store reference to the bar
+        widget.bar = bar
+        return widget
+
+    def evaluate_session(self):
+        """Evaluate a new check-in session from the input fields."""
+        try:
+            employee_id = self.employee_input.text().strip()
+            if not employee_id:
+                QMessageBox.warning(self, "Input Error", "Please enter an Employee ID.")
+                return
+
+            tbs = self.tbs_input.value()
+            vbs = self.vbs_input.value()
+            abs_ = self.abs_input.value()
+
+            # Compute DSI using model or fallback to weighted average
+            if self.model is not None:
+                dsi, weights, delta = self.model.predict(tbs, vbs, abs_)
+            else:
+                # Fallback: simple average
+                dsi = (tbs + vbs + abs_) / 3.0
+                weights = [1/3, 1/3, 1/3]
+                delta = calculate_discordance_delta(tbs, vbs, abs_)
+
+            # Classify risk tier
+            risk_tier = classify_risk_tier(dsi)
+
+            # Check masking
+            masking = classify_masking(delta)
+
+            # Save to database
+            self.db.save_checkin(
+                employee_id=employee_id,
+                tbs=tbs,
+                vbs=vbs,
+                abs_=abs_,
+                dsi=dsi,
+                delta=delta,
+                risk_tier=risk_tier.name,
+                masking_alert=masking["alert_message"] if masking["is_masking"] else None,
+            )
+
+            # Update gauge
+            self.risk_gauge.set_dsi(dsi)
+
+            # Update weight bars
+            self.text_weight_bar.bar.setValue(int(weights[0] * 100))
+            self.video_weight_bar.bar.setValue(int(weights[1] * 100))
+            self.audio_weight_bar.bar.setValue(int(weights[2] * 100))
+
+            # Show/hide warning banner
+            if masking["is_masking"]:
+                self.warning_banner.setText(
+                    f"⚠️ {masking['alert_message']} (Δ={delta:+.2f})"
+                )
+                self.warning_banner.show()
+            else:
+                self.warning_banner.hide()
+
+            # Refresh table
+            self.refresh_sessions()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred: {e}")
+
+    def refresh_sessions(self):
+        """Refresh the session table with latest data."""
+        sessions = self.db.get_checkins(limit=50)
+        self.session_table.set_sessions(sessions)
+
+        # Update gauge with latest DSI if available
+        if sessions:
+            self.risk_gauge.set_dsi(sessions[0]["dsi"])
 
 
-# ----------------------------------------------------------------------
-# Page: Summary
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Application entry point
+# ---------------------------------------------------------------------------
 
-elif page == "Summary":
-    st.title("Dashboard Summary")
+def main():
+    """Application entry point."""
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
 
-    db = get_database()
-    stats = db.get_summary_stats()
+    # Initialize database
+    db = DatabaseManager()
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Show login dialog
+    login = LoginDialog(db)
+    if login.exec() != QDialog.Accepted:
+        sys.exit(0)
 
-    col1.metric("Total Check-ins", stats["total_checkins"])
-    col2.metric("Average DSI", f"{stats['avg_dsi']:.1f}")
-    col3.metric("Pending Alerts", stats["pending_alerts"])
+    # Show main window
+    window = MainWindow(db)
+    window.show()
 
-    severity_counts = stats["severity_distribution"]
-    col4.metric(
-        "High-Risk Cases",
-        severity_counts.get("Severe", 0) + severity_counts.get("Critical", 0),
-    )
-
-    st.markdown("### Severity Distribution")
-
-    if severity_counts:
-        chart_data = {
-            "Severity": list(severity_counts.keys()),
-            "Count": list(severity_counts.values()),
-        }
-        st.bar_chart(chart_data, x="Severity", y="Count")
-    else:
-        st.info("No check-in data available yet.")
+    sys.exit(app.exec())
 
 
-# ----------------------------------------------------------------------
-# Footer
-# ----------------------------------------------------------------------
-
-st.sidebar.markdown("---")
-st.sidebar.caption("© 2026 Multimodal Depression Screening System")
+if __name__ == "__main__":
+    main()

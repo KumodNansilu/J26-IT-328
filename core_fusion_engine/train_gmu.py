@@ -1,13 +1,16 @@
 """
-Training script for the GMU (Gated Multimodal Unit) fusion model.
+Training script for the Gated Multimodal Fusion Engine (GMU).
 
-This script trains the GMU on the synthetic check-in dataset
-(data/checkin_dataset.csv) to learn the mapping from the three
-unimodal scores (TBS, VBS, ABS) to the ground-truth DSI.
+Generates 1,000 synthetic check-in samples covering honest, traditional
+masking, and forced composure scenarios, then trains the PyTorch model
+for 40 epochs using Adam optimizer and MSE loss.
+
+Saves the trained weights to `core_fusion_engine/gmu_fusion_model.pth`.
 """
 
 import os
 import random
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
@@ -16,7 +19,15 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from .fusion_model import GMUFusionModel
+from .config import (
+    TRAIN_EPOCHS,
+    TRAIN_LR,
+    TRAIN_SAMPLES,
+    TRAIN_BATCH_SIZE,
+    MODEL_WEIGHTS_PATH,
+)
+from .discordance import calculate_discordance_delta
+from .fusion_model import GatedMultimodalFusionEngine
 
 # ---------------------------------------------------------------------------
 # Reproducibility
@@ -29,47 +40,106 @@ torch.manual_seed(SEED)
 
 
 # ---------------------------------------------------------------------------
-# Data loading
+# Synthetic data generation
 # ---------------------------------------------------------------------------
 
-def load_dataset(
-    csv_path: str,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def generate_synthetic_data(
+    n_samples: int = TRAIN_SAMPLES,
+) -> pd.DataFrame:
     """
-    Load the check-in dataset and extract the unimodal scores and DSI.
+    Generate synthetic check-in samples covering 4 edge-case scenarios.
+
+    Scenarios:
+        1. Honest / Consistent: TBS ≈ VBS ≈ ABS (no masking)
+        2. Traditional Emotional Masking: VBS/ABS high, TBS low (Δ > +0.50)
+        3. Forced Composure: TBS high, VBS/ABS low (Δ < -0.50)
+        4. Mixed / Moderate: moderate scores with small discordance
 
     Parameters
     ----------
-    csv_path : str
-        Path to the CSV dataset.
+    n_samples : int
+        Number of synthetic samples to generate.
 
     Returns
     -------
-    tuple of np.ndarray
-        (tbs, vbs, abs_, dsi) arrays.
+    pd.DataFrame
+        DataFrame with columns: tbs, vbs, abs, dsi, delta, scenario.
     """
-    df = pd.read_csv(csv_path)
+    rows = []
 
-    tbs = df["tbs"].to_numpy(dtype=np.float32).reshape(-1, 1)
-    vbs = df["vbs"].to_numpy(dtype=np.float32).reshape(-1, 1)
-    abs_ = df["abs"].to_numpy(dtype=np.float32).reshape(-1, 1)
-    dsi = df["dsi"].to_numpy(dtype=np.float32).reshape(-1, 1)
+    # Split samples across scenarios
+    n_honest = int(n_samples * 0.40)
+    n_masking = int(n_samples * 0.25)
+    n_forced = int(n_samples * 0.25)
+    n_mixed = n_samples - n_honest - n_masking - n_forced
 
-    return tbs, vbs, abs_, dsi
+    # Scenario 1: Honest / Consistent
+    for _ in range(n_honest):
+        base = np.random.uniform(0.1, 0.9)
+        noise = np.random.uniform(-0.05, 0.05, 3)
+        tbs = np.clip(base + noise[0], 0.0, 1.0)
+        vbs = np.clip(base + noise[1], 0.0, 1.0)
+        abs_ = np.clip(base + noise[2], 0.0, 1.0)
+        delta = calculate_discordance_delta(tbs, vbs, abs_)
+        dsi = (tbs + vbs + abs_) / 3.0
+        rows.append((tbs, vbs, abs_, dsi, delta, "honest"))
 
+    # Scenario 2: Traditional Emotional Masking (Fake Happy Text)
+    # Δ = max(VBS, ABS) - TBS > +0.50
+    # Non-verbal cues (VBS/ABS) are HIGH, text (TBS) is LOW
+    for _ in range(n_masking):
+        vbs = np.random.uniform(0.60, 0.95)      # Face shows positive
+        abs_ = np.random.uniform(0.60, 0.95)     # Voice shows positive
+        tbs = np.random.uniform(0.05, 0.40)      # Text says "I'm fine" (masked)
+        delta = calculate_discordance_delta(tbs, vbs, abs_)
+        # DSI should be high because non-verbal cues reveal true state
+        dsi = np.clip((vbs + abs_) / 2.0 + 0.15, 0.0, 1.0)
+        rows.append((tbs, vbs, abs_, dsi, delta, "masking"))
+
+    # Scenario 3: Forced Composure (Distressed Text, Calm Exterior)
+    # Δ = max(VBS, ABS) - TBS < -0.50
+    # Text (TBS) is HIGH, non-verbal cues (VBS/ABS) are LOW
+    for _ in range(n_forced):
+        tbs = np.random.uniform(0.60, 0.95)      # Text reveals distress
+        vbs = np.random.uniform(0.05, 0.40)      # Face is calm (forced)
+        abs_ = np.random.uniform(0.05, 0.40)     # Voice is calm (forced)
+        delta = calculate_discordance_delta(tbs, vbs, abs_)
+        # DSI should be high because text reveals true state
+        dsi = np.clip(tbs + 0.15, 0.0, 1.0)
+        rows.append((tbs, vbs, abs_, dsi, delta, "forced_composure"))
+
+    # Scenario 4: Mixed / Moderate
+    for _ in range(n_mixed):
+        tbs = np.random.uniform(0.30, 0.70)
+        vbs = np.random.uniform(0.30, 0.70)
+        abs_ = np.random.uniform(0.30, 0.70)
+        delta = calculate_discordance_delta(tbs, vbs, abs_)
+        dsi = (tbs + vbs + abs_) / 3.0
+        rows.append((tbs, vbs, abs_, dsi, delta, "mixed"))
+
+    df = pd.DataFrame(
+        rows,
+        columns=["tbs", "vbs", "abs", "dsi", "delta", "scenario"],
+    )
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
 
 def create_dataloaders(
-    csv_path: str,
-    batch_size: int = 32,
+    df: pd.DataFrame,
+    batch_size: int = TRAIN_BATCH_SIZE,
     val_split: float = 0.2,
 ) -> Tuple[DataLoader, DataLoader]:
     """
-    Create training and validation dataloaders from the CSV dataset.
+    Create training and validation dataloaders from the synthetic data.
 
     Parameters
     ----------
-    csv_path : str
-        Path to the CSV dataset.
+    df : pd.DataFrame
+        Synthetic dataset with columns tbs, vbs, abs, dsi, delta.
     batch_size : int
         Batch size for the dataloaders.
     val_split : float
@@ -80,7 +150,11 @@ def create_dataloaders(
     tuple of DataLoader
         (train_loader, val_loader).
     """
-    tbs, vbs, abs_, dsi = load_dataset(csv_path)
+    tbs = df["tbs"].to_numpy(dtype=np.float32).reshape(-1, 1)
+    vbs = df["vbs"].to_numpy(dtype=np.float32).reshape(-1, 1)
+    abs_ = df["abs"].to_numpy(dtype=np.float32).reshape(-1, 1)
+    delta = df["delta"].to_numpy(dtype=np.float32).reshape(-1, 1)
+    dsi = df["dsi"].to_numpy(dtype=np.float32).reshape(-1, 1)
 
     # Shuffle and split
     n = len(tbs)
@@ -95,12 +169,14 @@ def create_dataloaders(
         torch.tensor(tbs[train_idx]),
         torch.tensor(vbs[train_idx]),
         torch.tensor(abs_[train_idx]),
+        torch.tensor(delta[train_idx]),
         torch.tensor(dsi[train_idx]),
     )
     val_tensors = (
         torch.tensor(tbs[val_idx]),
         torch.tensor(vbs[val_idx]),
         torch.tensor(abs_[val_idx]),
+        torch.tensor(delta[val_idx]),
         torch.tensor(dsi[val_idx]),
     )
 
@@ -120,12 +196,11 @@ def create_dataloaders(
 def train_model(
     train_loader: DataLoader,
     val_loader: DataLoader,
-    epochs: int = 50,
-    lr: float = 1e-3,
-    hidden_dim: int = 16,
-) -> GMUFusionModel:
+    epochs: int = TRAIN_EPOCHS,
+    lr: float = TRAIN_LR,
+) -> GatedMultimodalFusionEngine:
     """
-    Train the GMU fusion model.
+    Train the Gated Multimodal Fusion Engine.
 
     Parameters
     ----------
@@ -137,15 +212,13 @@ def train_model(
         Number of training epochs.
     lr : float
         Learning rate.
-    hidden_dim : int
-        Hidden dimension of the GMU.
 
     Returns
     -------
-    GMUFusionModel
+    GatedMultimodalFusionEngine
         The trained model.
     """
-    model = GMUFusionModel(hidden_dim=hidden_dim)
+    model = GatedMultimodalFusionEngine()
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -153,9 +226,9 @@ def train_model(
         # Training
         model.train()
         train_loss = 0.0
-        for tbs_b, vbs_b, abs_b, dsi_b in train_loader:
+        for tbs_b, vbs_b, abs_b, delta_b, dsi_b in train_loader:
             optimizer.zero_grad()
-            pred = model(tbs_b, vbs_b, abs_b)
+            pred, _, _ = model(tbs_b, vbs_b, abs_b, delta_b)
             loss = criterion(pred, dsi_b)
             loss.backward()
             optimizer.step()
@@ -167,8 +240,8 @@ def train_model(
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for tbs_b, vbs_b, abs_b, dsi_b in val_loader:
-                pred = model(tbs_b, vbs_b, abs_b)
+            for tbs_b, vbs_b, abs_b, delta_b, dsi_b in val_loader:
+                pred, _, _ = model(tbs_b, vbs_b, abs_b, delta_b)
                 loss = criterion(pred, dsi_b)
                 val_loss += loss.item() * tbs_b.size(0)
 
@@ -190,19 +263,39 @@ def train_model(
 
 def main() -> None:
     """
-    Train the GMU model on the synthetic dataset and save it.
+    Generate synthetic data, train the GMU model, and save weights.
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    csv_path = os.path.join(project_root, "data", "checkin_dataset.csv")
-    model_save_path = os.path.join(project_root, "models", "gmu_fusion.pt")
+    print("Generating synthetic dataset...")
+    df = generate_synthetic_data(TRAIN_SAMPLES)
+    print(f"Generated {len(df)} samples across scenarios:")
+    print(df["scenario"].value_counts().to_string())
 
-    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+    print("\nCreating dataloaders...")
+    train_loader, val_loader = create_dataloaders(df)
 
-    train_loader, val_loader = create_dataloaders(csv_path)
+    print(f"Training for {TRAIN_EPOCHS} epochs...\n")
     model = train_model(train_loader, val_loader)
 
-    torch.save(model.state_dict(), model_save_path)
-    print(f"Model saved to {model_save_path}")
+    # Save model weights
+    MODEL_WEIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), MODEL_WEIGHTS_PATH)
+    print(f"\nModel saved to {MODEL_WEIGHTS_PATH}")
+
+    # Quick verification
+    model.eval()
+    test_cases = [
+        (0.30, 0.35, 0.28, "Honest / Consistent"),
+        (0.15, 0.80, 0.75, "Traditional Emotional Masking"),
+        (0.85, 0.20, 0.15, "Forced Composure"),
+    ]
+    print("\nVerification predictions:")
+    for tbs, vbs, abs_, label in test_cases:
+        dsi, weights, delta = model.predict(tbs, vbs, abs_)
+        print(
+            f"  {label:30s} | TBS={tbs:.2f} VBS={vbs:.2f} ABS={abs_:.2f} "
+            f"| Δ={delta:+.2f} | DSI={dsi:.3f} | "
+            f"W=[{weights[0]:.2f}, {weights[1]:.2f}, {weights[2]:.2f}]"
+        )
 
 
 if __name__ == "__main__":
