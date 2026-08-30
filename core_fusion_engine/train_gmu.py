@@ -270,6 +270,12 @@ def main() -> None:
     print(f"Generated {len(df)} samples across scenarios:")
     print(df["scenario"].value_counts().to_string())
 
+    # Save the generated dataset to CSV for reference
+    from .config import DATA_DIR
+    dataset_path = DATA_DIR / "checkin_dataset.csv"
+    df.to_csv(dataset_path, index=False)
+    print(f"Dataset saved to {dataset_path}")
+
     print("\nCreating dataloaders...")
     train_loader, val_loader = create_dataloaders(df)
 
