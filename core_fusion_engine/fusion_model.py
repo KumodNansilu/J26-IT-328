@@ -26,14 +26,33 @@ class GatedMultimodalFusionEngine(nn.Module):
         - dsi     : final Depression Severity Index in [0, 1]
         - weights : dynamic modality weights [w_text, w_video, w_audio]
         - delta   : the Discordance Delta used as the 4th input
+
+    The gating network is a small MLP whose final hidden->3 layer is a
+    ``nn.Linear`` followed by ``nn.Softmax(dim=-1)``. With ``hidden_dim=0``
+    it degenerates to the architectural baseline ``nn.Linear(4, 3)``.
     """
 
-    def __init__(self) -> None:
-        """Initialize the gating layer."""
+    def __init__(self, hidden_dim: int = 16) -> None:
+        """
+        Initialize the gating network.
+
+        Parameters
+        ----------
+        hidden_dim : int
+            Hidden dimension of the gating MLP. Use 0 for the plain
+            ``nn.Linear(4, 3)`` baseline.
+        """
         super().__init__()
 
         # Gating network: 4 inputs (TBS, VBS, ABS, Δ) -> 3 modality weights
-        self.gate = nn.Linear(4, 3)
+        if hidden_dim > 0:
+            self.gate = nn.Sequential(
+                nn.Linear(4, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, 3),
+            )
+        else:
+            self.gate = nn.Linear(4, 3)
 
     def forward(
         self,
@@ -114,8 +133,11 @@ class GatedMultimodalFusionEngine(nn.Module):
 
             dsi, weights, _ = self.forward(tbs_t, vbs_t, abs_t, delta_t)
 
+        # Clamp DSI to the valid [0, 1] range
+        dsi = float(torch.clamp(dsi, 0.0, 1.0).item())
+
         return (
-            float(dsi.item()),
+            dsi,
             [float(w) for w in weights.squeeze(0)],
             float(delta),
         )

@@ -17,17 +17,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 import torch
 
+from core_fusion_engine.config import MODEL_WEIGHTS_PATH, GATE_HIDDEN_DIM
 from core_fusion_engine.discordance import calculate_discordance_delta
 from core_fusion_engine.fusion_model import GatedMultimodalFusionEngine
 from core_fusion_engine.severity import classify_risk_tier
 from hr_dashboard_app.database_manager import DatabaseManager
 
 
+def load_trained_model() -> GatedMultimodalFusionEngine:
+    """Load the trained GMU model weights if available."""
+    model = GatedMultimodalFusionEngine(hidden_dim=GATE_HIDDEN_DIM)
+    if MODEL_WEIGHTS_PATH.exists():
+        model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location="cpu"))
+    model.eval()
+    return model
+
+
 class TestGatedMultimodalFusionEngine:
     """Test cases for the GMU fusion model."""
 
     def setup_method(self):
-        self.model = GatedMultimodalFusionEngine()
+        self.model = GatedMultimodalFusionEngine(hidden_dim=GATE_HIDDEN_DIM)
 
     def test_output_shape(self):
         """Model should output shape (batch, 1)."""
@@ -74,26 +84,33 @@ class TestGatedMultimodalFusionEngine:
     def test_dynamic_weight_shifting_during_masking(self):
         """
         During Traditional Emotional Masking (VBS/ABS high, TBS low),
-        the model should shift weights away from the deceptive text modality.
+        the trained model should shift weights away from the deceptive
+        text modality and toward the truthful video/audio modalities.
         """
+        # Use the trained model with hidden_dim matching training
+        self.model = load_trained_model()
+
         # Traditional Emotional Masking: TBS low, VBS/ABS high
         dsi, weights, delta = self.model.predict(0.15, 0.80, 0.75)
         assert delta > 0.50  # Confirms masking scenario
 
-        # The model should assign lower weight to text (deceptive modality)
+        # The trained model should assign lower weight to text (deceptive)
         # and higher weight to video/audio (truthful modalities)
         assert weights[0] < weights[1] or weights[0] < weights[2]
 
     def test_dynamic_weight_shifting_during_forced_composure(self):
         """
         During Forced Composure (TBS high, VBS/ABS low),
-        the model should shift weights toward the text modality.
+        the trained model should shift weights toward the text modality.
         """
+        # Use the trained model with hidden_dim matching training
+        self.model = load_trained_model()
+
         # Forced Composure: TBS high, VBS/ABS low
         dsi, weights, delta = self.model.predict(0.85, 0.20, 0.15)
         assert delta < -0.50  # Confirms forced composure scenario
 
-        # The model should assign higher weight to text (truthful modality)
+        # The trained model should assign higher weight to text (truthful modality)
         assert weights[0] > weights[1] and weights[0] > weights[2]
 
     def test_gradient_flow(self):
@@ -112,7 +129,7 @@ class TestGatedMultimodalFusionEngine:
     def test_state_dict_save_load(self):
         """Model state dict should be saveable and loadable."""
         state_dict = self.model.state_dict()
-        new_model = GatedMultimodalFusionEngine()
+        new_model = GatedMultimodalFusionEngine(hidden_dim=GATE_HIDDEN_DIM)
         new_model.load_state_dict(state_dict)
 
         tbs = torch.tensor([[0.3]])

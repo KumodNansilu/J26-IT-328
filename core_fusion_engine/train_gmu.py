@@ -24,6 +24,7 @@ from .config import (
     TRAIN_LR,
     TRAIN_SAMPLES,
     TRAIN_BATCH_SIZE,
+    GATE_HIDDEN_DIM,
     MODEL_WEIGHTS_PATH,
 )
 from .discordance import calculate_discordance_delta
@@ -92,8 +93,8 @@ def generate_synthetic_data(
         abs_ = np.random.uniform(0.60, 0.95)     # Voice shows positive
         tbs = np.random.uniform(0.05, 0.40)      # Text says "I'm fine" (masked)
         delta = calculate_discordance_delta(tbs, vbs, abs_)
-        # DSI should be high because non-verbal cues reveal true state
-        dsi = np.clip((vbs + abs_) / 2.0 + 0.15, 0.0, 1.0)
+        # DSI reflects the truthful non-verbal cues (deceptive text down-weighted)
+        dsi = (vbs + abs_) / 2.0
         rows.append((tbs, vbs, abs_, dsi, delta, "masking"))
 
     # Scenario 3: Forced Composure (Distressed Text, Calm Exterior)
@@ -104,8 +105,8 @@ def generate_synthetic_data(
         vbs = np.random.uniform(0.05, 0.40)      # Face is calm (forced)
         abs_ = np.random.uniform(0.05, 0.40)     # Voice is calm (forced)
         delta = calculate_discordance_delta(tbs, vbs, abs_)
-        # DSI should be high because text reveals true state
-        dsi = np.clip(tbs + 0.15, 0.0, 1.0)
+        # DSI reflects the truthful text modality
+        dsi = tbs
         rows.append((tbs, vbs, abs_, dsi, delta, "forced_composure"))
 
     # Scenario 4: Mixed / Moderate
@@ -198,9 +199,13 @@ def train_model(
     val_loader: DataLoader,
     epochs: int = TRAIN_EPOCHS,
     lr: float = TRAIN_LR,
+    hidden_dim: int = 16,
 ) -> GatedMultimodalFusionEngine:
     """
     Train the Gated Multimodal Fusion Engine.
+
+    Uses the Adam optimizer with MSE loss and a ReduceLROnPlateau
+    scheduler. The best (lowest validation loss) checkpoint is retained.
 
     Parameters
     ----------
@@ -212,15 +217,23 @@ def train_model(
         Number of training epochs.
     lr : float
         Learning rate.
+    hidden_dim : int
+        Hidden dimension of the gating MLP.
 
     Returns
     -------
     GatedMultimodalFusionEngine
-        The trained model.
+        The trained model (best validation checkpoint).
     """
-    model = GatedMultimodalFusionEngine()
+    model = GatedMultimodalFusionEngine(hidden_dim=hidden_dim)
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", patience=15, factor=0.5
+    )
+
+    best_val_loss = float("inf")
+    best_state = None
 
     for epoch in range(epochs):
         # Training
@@ -246,13 +259,23 @@ def train_model(
                 val_loss += loss.item() * tbs_b.size(0)
 
         val_loss /= len(val_loader.dataset)
+        scheduler.step(val_loss)
 
-        if (epoch + 1) % 10 == 0:
+        # Keep the best checkpoint
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+
+        if (epoch + 1) % 25 == 0:
             print(
                 f"Epoch {epoch + 1:3d}/{epochs} | "
                 f"Train Loss: {train_loss:.6f} | "
                 f"Val Loss: {val_loss:.6f}"
             )
+
+    # Restore best checkpoint
+    if best_state is not None:
+        model.load_state_dict(best_state)
 
     return model
 
@@ -280,7 +303,13 @@ def main() -> None:
     train_loader, val_loader = create_dataloaders(df)
 
     print(f"Training for {TRAIN_EPOCHS} epochs...\n")
-    model = train_model(train_loader, val_loader)
+    model = train_model(
+        train_loader,
+        val_loader,
+        epochs=TRAIN_EPOCHS,
+        lr=TRAIN_LR,
+        hidden_dim=GATE_HIDDEN_DIM,
+    )
 
     # Save model weights
     MODEL_WEIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
