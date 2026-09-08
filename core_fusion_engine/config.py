@@ -37,10 +37,11 @@ YELLOW_TIER_THRESHOLD = 0.45   # 0.45 <= DSI < 0.70 -> YELLOW TIER (Moderate Ris
 # ---------------------------------------------------------------------------
 # Model Training Hyperparameters
 # ---------------------------------------------------------------------------
-TRAIN_EPOCHS = 40
-TRAIN_LR = 0.01
+TRAIN_EPOCHS = 200
+TRAIN_LR = 0.003
 TRAIN_SAMPLES = 1000
 TRAIN_BATCH_SIZE = 32
+GATE_HIDDEN_DIM = 16
 MODEL_WEIGHTS_PATH = MODEL_DIR / "gmu_fusion_model.pth"
 
 # ---------------------------------------------------------------------------
