@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+# Env
+.env
+# OS / IDE
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+# Models & data (large binaries, keep out of git)
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.bin
+data/sample_data/*
+!data/sample_data/.gitkeep
+# Build / dist
+build/
+dist/
+*.spec

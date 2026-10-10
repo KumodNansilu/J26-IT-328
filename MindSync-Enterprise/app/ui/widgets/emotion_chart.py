@@ -1,0 +1,1 @@
+"""Emotion chart widget."""
