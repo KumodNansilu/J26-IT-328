@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from core_fusion_engine.discordance import calculate_discordance_delta, classify_masking
+from ai_services.dsi_fusion_member4.discordance_delta import calculate_discordance_delta, classify_masking
 
 
 class TestDiscordanceDelta:

@@ -10,6 +10,14 @@ ENV/
 env.bak/
 venv.bak/
 pythonenv*
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets - never commit real env files (example template is committed)
+.env
 
 # IDE
 .vscode/

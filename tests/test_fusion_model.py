@@ -17,11 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 import torch
 
-from core_fusion_engine.config import MODEL_WEIGHTS_PATH, GATE_HIDDEN_DIM
-from core_fusion_engine.discordance import calculate_discordance_delta
-from core_fusion_engine.fusion_model import GatedMultimodalFusionEngine
-from core_fusion_engine.severity import classify_risk_tier
-from hr_dashboard_app.database_manager import DatabaseManager
+from ai_services.dsi_fusion_member4.config import MODEL_WEIGHTS_PATH, GATE_HIDDEN_DIM
+from ai_services.dsi_fusion_member4.discordance_delta import calculate_discordance_delta
+from ai_services.dsi_fusion_member4.softmax_gmu import GatedMultimodalFusionEngine
+from ai_services.dsi_fusion_member4.severity import classify_risk_tier
+from app.database.connection import DatabaseManager
 
 
 def load_trained_model() -> GatedMultimodalFusionEngine:
