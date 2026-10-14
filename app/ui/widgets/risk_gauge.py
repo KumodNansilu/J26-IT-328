@@ -1,13 +1,18 @@
 """
 Risk gauge widget for displaying the Depression Severity Index (DSI).
 
-A circular gauge with Green/Yellow/Red zones that visually indicates
-the current depression risk level.
+Modern segmented dial: light track, three risk arcs (green/yellow/red),
+needle marker, glow dot and high-contrast center readout.
 """
 
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+
+from app.ui import get as theme_get
+
+GREEN_DSI_MAX = 0.45
+YELLOW_DSI_MAX = 0.70
 
 
 class RiskGauge(QWidget):
@@ -23,7 +28,7 @@ class RiskGauge(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._dsi = 0.0
-        self.setMinimumSize(220, 220)
+        self.setMinimumSize(240, 240)
 
     def set_dsi(self, value: float):
         """Update the displayed DSI value (0-1)."""
@@ -32,18 +37,18 @@ class RiskGauge(QWidget):
 
     def _risk_color(self) -> QColor:
         """Return the color for the current DSI value."""
-        if self._dsi < 0.45:
-            return QColor(76, 175, 80)      # Green
-        elif self._dsi < 0.70:
-            return QColor(255, 193, 7)      # Yellow
+        if self._dsi < GREEN_DSI_MAX:
+            return QColor(theme_get("GREEN"))
+        elif self._dsi < YELLOW_DSI_MAX:
+            return QColor(theme_get("YELLOW"))
         else:
-            return QColor(244, 67, 54)      # Red
+            return QColor(theme_get("RED"))
 
     def _risk_label(self) -> str:
         """Return the risk label for the current DSI value."""
-        if self._dsi < 0.45:
+        if self._dsi < GREEN_DSI_MAX:
             return "GREEN TIER\nLow Risk"
-        elif self._dsi < 0.70:
+        elif self._dsi < YELLOW_DSI_MAX:
             return "YELLOW TIER\nModerate Risk"
         else:
             return "RED TIER\nHigh Risk"
@@ -53,9 +58,9 @@ class RiskGauge(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Gauge dimensions
+        # Gauge geometry: 270-degree dial with a gap at the bottom
         side = min(self.width(), self.height())
-        margin = 20
+        margin = 22
         gauge_rect = QRectF(
             (self.width() - side) / 2 + margin,
             (self.height() - side) / 2 + margin,
@@ -63,31 +68,78 @@ class RiskGauge(QWidget):
             side - 2 * margin,
         )
 
-        # Draw background arc (full circle)
-        painter.setPen(QPen(QColor(230, 230, 230), 20))
-        painter.drawArc(gauge_rect, 0, 360 * 16)
+        start_angle = 135 * 16  # bottom-left, clockwise dial
+        full_span = -270 * 16
 
-        # Draw colored arc based on DSI (270 degrees starting from bottom)
-        start_angle = 135 * 16  # Start at bottom-left
-        span_angle = int(-270 * 16 * self._dsi)  # Clockwise up to 270 degrees
+        GREEN = QColor(theme_get("GREEN"))
+        YELLOW = QColor(theme_get("YELLOW"))
+        RED = QColor(theme_get("RED"))
+        TRACK = QColor(theme_get("TRACK"))
+        TEXT_MAIN = QColor(theme_get("TEXT"))
+        TEXT_DIM = QColor(theme_get("TEXT_DIM"))
 
+        # Track
+        painter.setPen(QPen(TRACK, 18, Qt.SolidLine, Qt.RoundCap))
+        painter.drawArc(gauge_rect, start_angle, full_span)
+
+        # Faint zone markers (green / yellow / red thirds of the dial)
+        zone_pen_width = 18
+        for zone_start_frac, zone_frac, color in (
+            (0.0, GREEN_DSI_MAX, GREEN),
+            (GREEN_DSI_MAX, YELLOW_DSI_MAX - GREEN_DSI_MAX, YELLOW),
+            (YELLOW_DSI_MAX, 1.0 - YELLOW_DSI_MAX, RED),
+        ):
+            faint = QColor(color)
+            faint.setAlpha(52)
+            painter.setPen(QPen(faint, zone_pen_width, Qt.SolidLine, Qt.FlatCap))
+            painter.drawArc(
+                gauge_rect,
+                int(start_angle + full_span * zone_start_frac + 40),
+                int(full_span * zone_frac - 80),
+            )
+
+        # Active value arc
         color = self._risk_color()
-        painter.setPen(QPen(color, 20, Qt.SolidLine, Qt.RoundCap))
-        painter.drawArc(gauge_rect, start_angle, span_angle)
+        painter.setPen(QPen(color, 18, Qt.SolidLine, Qt.RoundCap))
+        painter.drawArc(gauge_rect, start_angle, int(full_span * self._dsi))
 
-        # Draw DSI value in center
-        painter.setPen(QColor(50, 50, 50))
-        font = QFont("Arial", 28, QFont.Bold)
+        # Needle dot at the tip of the active arc
+        import math
+
+        angle_deg = 135 - 270 * self._dsi
+        angle_rad = math.radians(angle_deg)
+        cx = gauge_rect.center().x()
+        cy = gauge_rect.center().y()
+        radius = gauge_rect.width() / 2
+        tip_x = cx + radius * math.cos(angle_rad)
+        tip_y = cy - radius * math.sin(angle_rad)
+        glow = QColor(color)
+        glow.setAlpha(70)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(int(tip_x) - 11, int(tip_y) - 11, 22, 22)
+        painter.setBrush(color)
+        painter.drawEllipse(int(tip_x) - 6, int(tip_y) - 6, 12, 12)
+
+        # Center DSI value (bright, always readable on dark bg)
+        painter.setPen(TEXT_MAIN)
+        font = QFont("Segoe UI", 34, QFont.Bold)
         painter.setFont(font)
         dsi_text = f"{self._dsi:.2f}"
-        text_rect = gauge_rect.adjusted(0, -20, 0, -20)
+        text_rect = gauge_rect.adjusted(0, -26, 0, -26)
         painter.drawText(text_rect, Qt.AlignCenter, dsi_text)
 
-        # Draw risk label below value
-        painter.setPen(color)
-        font = QFont("Arial", 11, QFont.Bold)
+        # Small caption + risk pill text below value
+        painter.setPen(TEXT_DIM)
+        font = QFont("Segoe UI", 10)
         painter.setFont(font)
-        label_rect = gauge_rect.adjusted(0, 40, 0, 40)
+        painter.drawText(
+            gauge_rect.adjusted(0, 12, 0, 12), Qt.AlignCenter, "DEPRESSION SEVERITY"
+        )
+        painter.setPen(color)
+        font = QFont("Segoe UI", 11, QFont.Bold)
+        painter.setFont(font)
+        label_rect = gauge_rect.adjusted(0, 44, 0, 44)
         painter.drawText(label_rect, Qt.AlignCenter, self._risk_label())
 
         painter.end()
