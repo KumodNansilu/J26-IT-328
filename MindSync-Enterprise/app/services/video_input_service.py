@@ -37,8 +37,6 @@ def validate_video_input(path: str, duration_override_s: float | None = None,
         video_loader
     from ai_services.video_facial_emotion_behavior.preprocessing.frames import \
         preprocess_video
-    from ai_services.video_facial_emotion_behavior.face_detection.faces import (
-        check_face_sufficiency, face_coverage)
 
     vr = video_loader.validate_video_file(
         path, allowed_extensions=SUPPORTED_VIDEO_EXTENSIONS,
@@ -59,14 +57,28 @@ def validate_video_input(path: str, duration_override_s: float | None = None,
                            {"sampled": pre.sampled_count,
                             "scanned": pre.scanned_count,
                             "dropped": pre.dropped_count})
-    raw = [sf.frame for sf in pre.frames]
+    # Step-3: shared face + landmark stage (same for upload + webcam).
+    # Memory only: crops/landmarks are cleared before return.
+    from app.config import (EXPECTED_LANDMARK_COUNT, FACE_CROP_PADDING,
+                            FACE_MIN_SIZE_PX)
+    from ai_services.video_facial_emotion_behavior.landmarks import (
+        run_face_stage)
+    face_res = run_face_stage(
+        pre.frames, min_size=FACE_MIN_SIZE_PX, padding=FACE_CROP_PADDING,
+        min_usable=MIN_USABLE_FRAMES, min_coverage=MIN_FACE_COVERAGE,
+        expected_landmarks=EXPECTED_LANDMARK_COUNT,
+        is_cancelled=is_cancelled)
+    details = {"usable": face_res.with_face, "total": face_res.total,
+               "ratio": face_res.coverage,
+               "with_landmarks": sum(1 for f in face_res.usable
+                                     if f.landmark_count > 0)}
+    msg = face_res.message()
     try:
-        usable, total, ratio = face_coverage(raw)
+        face_res.clear()  # privacy: drop crops/landmarks right after check
+        pre.frames.clear()
     finally:
-        pre.frames.clear()  # privacy: drop frame refs right after face check
-        raw.clear()
-    ok, msg = check_face_sufficiency(
-        usable, total, ratio,
-        min_usable=MIN_USABLE_FRAMES, min_coverage=MIN_FACE_COVERAGE)
-    return CheckResult(ok, "face", msg,
-                       {"usable": usable, "total": total, "ratio": ratio})
+        pass
+    if not face_res.ok:
+        stage = "cancelled" if "cancel" in msg.lower() else "face"
+        return CheckResult(False, stage, msg, details)
+    return CheckResult(True, "face", msg, details)

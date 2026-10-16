@@ -31,6 +31,13 @@ MIN_VALID_FRAMES: int = 10
 # Minimum share of sampled frames that must contain a face (0..1).
 # We do NOT reject a video because of one faceless frame.
 MIN_FACE_COVERAGE: float = 0.3
+# Minimum face size (px, square side) for Haar detectMultiScale.
+FACE_MIN_SIZE_PX: int = 60
+# Padding around the face box when cropping for the CNN (fraction of box).
+FACE_CROP_PADDING: float = 0.1
+# Landmark count the installed MediaPipe config should return; verified at
+# runtime and reported (we do NOT crash if a config returns a refined count).
+EXPECTED_LANDMARK_COUNT: int = 468
 
 # Webcam recording
 WEBCAM_DEVICE_INDEX: int = 0
