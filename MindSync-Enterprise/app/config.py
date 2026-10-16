@@ -16,13 +16,18 @@ VIDEO_MAX_DURATION_S: float = VIDEO_TARGET_DURATION_S + VIDEO_DURATION_TOLERANCE
 # File picker filter + validation allow-list (decoder support still
 # depends on the local OpenCV/FFmpeg build; we probe with cv2 anyway).
 SUPPORTED_VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov")
+SUPPORTED_VIDEO_EXTS = SUPPORTED_VIDEO_EXTENSIONS  # alias
 VIDEO_PICKER_FILTER = "Videos (*.mp4 *.avi *.mov)"
 
 # Frame sampling: process ~2 fps to keep a 30 s clip cheap
 # (30 s * 2 = ~60 frames) while handling any source FPS.
 FRAME_SAMPLE_FPS: float = 2.0
+# Cap kept frames in memory (60 expected at 2 fps/30 s; 120 headroom).
+FRAME_SAMPLE_MAX_FRAMES: int = 120
 # Minimum usable (face-containing) frames needed for a trustworthy result.
 MIN_USABLE_FRAMES: int = 10
+# Minimum valid sampled frames from preprocessing (before face check).
+MIN_VALID_FRAMES: int = 10
 # Minimum share of sampled frames that must contain a face (0..1).
 # We do NOT reject a video because of one faceless frame.
 MIN_FACE_COVERAGE: float = 0.3

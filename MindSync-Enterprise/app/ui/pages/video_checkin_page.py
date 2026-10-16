@@ -3,16 +3,61 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QThread, Slot
+from PySide6.QtCore import Qt, QThread, Signal, Slot, QObject
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QLabel, QMessageBox, QPushButton, QProgressBar,
                                QVBoxLayout, QWidget)
 
 from app.config import VIDEO_PICKER_FILTER, VIDEO_TARGET_DURATION_S
-from app.services.video_input_service import validate_video_input
+from app.services.video_input_service import CheckResult, validate_video_input
 from app.utils.paths import is_temp_mindsync_path
 from app.ui.pages.webcam_recorder import RecorderWorker
+
+
+class ValidationWorker(QObject):
+    """Runs validate_video_input() off the UI thread (Step-2: preprocessing).
+
+    Emits progress ticks while preprocessing scans, supports cancellation
+    via request_cancel() (polled by preprocess_video each frame read).
+    Releases frame memory inside the service; this worker only forwards
+    the small CheckResult (no frames cross threads).
+    """
+
+    progress = Signal(int)          # 0..100 (indeterminate: emits heartbeat)
+    done = Signal(object)           # CheckResult
+
+    def __init__(self, path: str, wall: float | None = None,
+                 parent: QObject | None = None):
+        super().__init__(parent)
+        self._path = path
+        self._wall = wall
+        self._cancel = False
+
+    @Slot()
+    def request_cancel(self):
+        self._cancel = True
+
+    def _is_cancelled(self) -> bool:
+        return self._cancel
+
+    @Slot()
+    def run(self):
+        self.progress.emit(5)
+        def _forward(kept: int, cap_max: int):
+            try:
+                pct = 5 + int(90 * kept / max(cap_max, 1))
+                self.progress.emit(min(95, pct))
+            except Exception:
+                pass
+        try:
+            res = validate_video_input(
+                self._path, duration_override_s=self._wall,
+                is_cancelled=self._is_cancelled, on_progress=_forward)
+        except Exception as e:  # noqa: BLE001 — surface to UI, never crash
+            res = CheckResult(False, "error", f"Validation failed: {e}", {})
+        self.progress.emit(100)
+        self.done.emit(res)
 
 
 def _bgr_to_pixmap(frame, max_w: int = 640, max_h: int = 480):
@@ -48,6 +93,8 @@ class VideoCheckinPage(QWidget):
         self._recorded_wall_s: float | None = None
         self._thread: QThread | None = None
         self._worker: RecorderWorker | None = None
+        self._val_thread: QThread | None = None
+        self._val_worker: ValidationWorker | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -209,13 +256,37 @@ class VideoCheckinPage(QWidget):
     def run_validation(self):
         if not self.selected_path:
             return
+        # Cancel any in-flight validation before starting a new one so two
+        # preprocess scans never run at once (prevents double VideoCapture).
+        self._cancel_validation()
         self.progress.setVisible(True)
-        self.lbl_status.setText("Status: validating...")
+        self.progress.setRange(0, 100)
+        self.progress.setValue(2)
+        self.lbl_status.setText("Status: preprocessing + validating... (Cancel to stop)")
         # Only a fresh webcam take carries wall-clock; uploads use None
         # so header duration applies.
         wall = self._recorded_wall_s if self._is_temp_recording else None
-        res = validate_video_input(self.selected_path, duration_override_s=wall)
+        self._val_thread = QThread(self)
+        self._val_worker = ValidationWorker(self.selected_path, wall)
+        self._val_worker.moveToThread(self._val_thread)
+        self._val_thread.started.connect(self._val_worker.run)
+        self._val_worker.progress.connect(self._on_val_progress)
+        self._val_worker.done.connect(self._on_val_done)
+        self._val_worker.done.connect(self._val_thread.quit)
+        self._val_worker.done.connect(self._val_worker.deleteLater)
+        self._val_thread.finished.connect(self._val_thread.deleteLater)
+        self.btn_continue.setEnabled(False)
+        self._val_thread.start()
+
+    @Slot(int)
+    def _on_val_progress(self, v: int):
+        self.progress.setValue(int(v))
+
+    @Slot(object)
+    def _on_val_done(self, res):
         self.progress.setVisible(False)
+        self._val_thread = None
+        self._val_worker = None
         if res.ok:
             d = res.details
             self.lbl_details.setText(
@@ -225,13 +296,34 @@ class VideoCheckinPage(QWidget):
             self.lbl_status.setText("Status: valid - review, then Continue to Analysis.")
             self.btn_continue.setEnabled(True)
         else:
+            if res.stage == "cancelled":
+                self.lbl_validation.setText("Cancelled.")
+                self.lbl_status.setText("Status: validation cancelled.")
+                return
             self.lbl_validation.setText("Failed: " + res.message)
             self.lbl_status.setText("Status: invalid video.")
             self.btn_continue.setEnabled(False)
             QMessageBox.warning(self, "Validation", res.message)
 
+    def _cancel_validation(self):
+        try:
+            if getattr(self, "_val_worker", None):
+                self._val_worker.request_cancel()
+            if getattr(self, "_val_thread", None):
+                self._val_thread.quit()
+                self._val_thread.wait(3000)
+        except Exception:
+            pass
+        finally:
+            self._val_thread = None
+            self._val_worker = None
+
     @Slot()
     def reset_selection(self):
+        try:
+            self._cancel_validation()
+        except Exception:
+            pass
         self._discard_temp_recording()
         self.selected_path = None
         self._recorded_wall_s = None
@@ -267,6 +359,10 @@ class VideoCheckinPage(QWidget):
             if self._thread:
                 self._thread.quit()
                 self._thread.wait(3000)
+            try:
+                self._cancel_validation()
+            except Exception:
+                pass
         finally:
             super().closeEvent(event)
 
