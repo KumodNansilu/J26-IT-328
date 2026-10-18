@@ -1,7 +1,7 @@
 """
 Training script for the Gated Multimodal Fusion Engine (GMU).
 
-Generates 1,000 synthetic check-in samples covering honest, traditional
+Generates 2,000 synthetic check-in samples covering honest, traditional
 masking, and forced composure scenarios, then trains the PyTorch model
 for 40 epochs using Adam optimizer and MSE loss.
 
@@ -328,7 +328,7 @@ def main() -> None:
         dsi, weights, delta = model.predict(tbs, vbs, abs_)
         print(
             f"  {label:30s} | TBS={tbs:.2f} VBS={vbs:.2f} ABS={abs_:.2f} "
-            f"| Δ={delta:+.2f} | DSI={dsi:.3f} | "
+            f"| D={delta:+.2f} | DSI={dsi:.3f} | "
             f"W=[{weights[0]:.2f}, {weights[1]:.2f}, {weights[2]:.2f}]"
         )
 
