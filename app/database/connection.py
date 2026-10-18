@@ -360,3 +360,100 @@ class DatabaseManager:
             "risk_distribution": risk_distribution,
             "masking_alerts": masking_alerts,
         }
+
+    def get_daily_avg_dsi(self, days: int = 14) -> List[Dict[str, object]]:
+        """
+        Company-wide daily average DSI for the past N days (trend chart).
+
+        Returns one entry per calendar day (oldest first); days with no
+        check-ins get avg_dsi=None so the chart can render gaps.
+
+        Returns
+        -------
+        list of dict
+            Each dict: {"date": "YYYY-MM-DD", "label": "Mon 12",
+            "avg_dsi": float | None, "count": int}
+        """
+        from datetime import date, timedelta
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT substr(timestamp, 1, 10) AS day,
+                   AVG(dsi) AS avg_dsi,
+                   COUNT(*) AS n
+            FROM checkins
+            WHERE date(substr(timestamp, 1, 10)) >= date('now', ?)
+            GROUP BY day
+            """,
+            (f"-{int(days) - 1} days",),
+        )
+        rows = {r["day"]: (r["avg_dsi"], r["n"]) for r in cursor.fetchall()}
+        conn.close()
+
+        today = date.today()
+        out: List[Dict[str, object]] = []
+        for i in range(days - 1, -1, -1):
+            d = today - timedelta(days=i)
+            key = d.isoformat()
+            avg, n = rows.get(key, (None, 0))
+            out.append(
+                {
+                    "date": key,
+                    "label": d.strftime("%a %d"),
+                    "avg_dsi": round(float(avg), 3) if avg is not None else None,
+                    "count": int(n),
+                }
+            )
+        return out
+
+    def seed_demo_trend_data(self, days: int = 14) -> int:
+        """
+        Insert deterministic demo check-ins spread over the past N days
+        (2-4 employees/day, realistic wave) so the trend chart is visible.
+
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        import random
+        from datetime import datetime, timedelta
+
+        rng = random.Random(7)
+        employees = ["EMP001", "EMP002", "EMP003", "EMP004", "EMP005"]
+        inserted = 0
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        now = datetime.now()
+        for back in range(days - 1, -1, -1):
+            day = now - timedelta(days=back)
+            # Gentle wave: mid-week higher, weekend lower + noise
+            base = 0.52 + 0.14 * __import__("math").sin(back / 2.2) + rng.uniform(-0.06, 0.06)
+            for emp in rng.sample(employees, rng.randint(2, 4)):
+                tbs = round(min(1.0, max(0.0, base + rng.uniform(-0.12, 0.12))), 3)
+                vbs = round(min(1.0, max(0.0, base + rng.uniform(-0.12, 0.12))), 3)
+                abs_ = round(min(1.0, max(0.0, base + rng.uniform(-0.12, 0.12))), 3)
+                dsi = round((tbs + vbs + abs_) / 3.0, 3)
+                delta = round(max(vbs, abs_) - tbs, 3)
+                tier = "RED" if dsi >= 0.70 else ("YELLOW" if dsi >= 0.45 else "GREEN")
+                ts = day.replace(
+                    hour=rng.randint(8, 18),
+                    minute=rng.randint(0, 59),
+                    second=rng.randint(0, 59),
+                    microsecond=0,
+                ).isoformat()
+                cursor.execute(
+                    """
+                    INSERT INTO checkins
+                        (employee_id, timestamp, tbs, vbs, abs, dsi, delta,
+                         risk_tier, masking_alert)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                    """,
+                    (emp, ts, tbs, vbs, abs_, dsi, delta, tier),
+                )
+                inserted += 1
+        conn.commit()
+        conn.close()
+        return inserted

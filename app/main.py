@@ -54,6 +54,7 @@ from app.services.dsi_service import AlertController
 from app.ui import get as theme_get, mode as theme_mode
 from app.ui.widgets.risk_gauge import RiskGauge
 from app.ui.widgets.session_table import SessionTable
+from app.ui.widgets.trend_chart import TrendChart
 from app.utils.theme import apply_theme, saved_mode
 
 
@@ -309,12 +310,30 @@ class MainWindow(QMainWindow):
         table_layout.addWidget(self.session_table)
         right_layout.addWidget(table_group, 1)
 
-        # Refresh button
+        # 14-day company trend chart
+        trend_group = QGroupBox("Company Trend  —  avg DSI, past 14 days")
+        trend_layout = QVBoxLayout(trend_group)
+        self.trend_sub = QLabel("Company-wide daily average DSI")
+        self.trend_sub.setObjectName("appSubtitle")
+        trend_layout.addWidget(self.trend_sub)
+        self.trend_chart = TrendChart()
+        trend_layout.addWidget(self.trend_chart)
+        right_layout.addWidget(trend_group, 1)
+
+        # Refresh + demo-data buttons
+        btn_row = QHBoxLayout()
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setObjectName("ghost")
         refresh_btn.setCursor(Qt.PointingHandCursor)
         refresh_btn.clicked.connect(self.refresh_sessions)
-        right_layout.addWidget(refresh_btn)
+        btn_row.addWidget(refresh_btn)
+        self.demo_btn = QPushButton("Load 14-day demo")
+        self.demo_btn.setObjectName("ghost")
+        self.demo_btn.setCursor(Qt.PointingHandCursor)
+        self.demo_btn.setToolTip("Insert demo check-ins across the past 14 days")
+        self.demo_btn.clicked.connect(self.load_demo_trend)
+        btn_row.addWidget(self.demo_btn)
+        right_layout.addLayout(btn_row)
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
@@ -468,6 +487,25 @@ class MainWindow(QMainWindow):
         if sessions:
             self.risk_gauge.set_dsi(sessions[0]["dsi"])
 
+        # Update 14-day company trend chart
+        try:
+            daily = self.db.get_daily_avg_dsi(14)
+            self.trend_chart.set_data(daily)
+            vals = [d["avg_dsi"] for d in daily if d["avg_dsi"] is not None]
+            if vals:
+                latest = vals[-1]
+                lo, hi = min(vals), max(vals)
+                self.trend_sub.setText(
+                    f"Company-wide daily average DSI   •   "
+                    f"today {latest:.3f}   •   14-day range {lo:.2f}–{hi:.2f}"
+                )
+            else:
+                self.trend_sub.setText(
+                    "Company-wide daily average DSI   •   no data yet"
+                )
+        except Exception:
+            pass
+
         # Update header stat pills
         try:
             stats = self.db.get_summary_stats()
@@ -479,6 +517,16 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def load_demo_trend(self):
+        """Seed demo check-ins across 14 days, then refresh."""
+        try:
+            n = self.db.seed_demo_trend_data(14)
+            self.demo_btn.setText(f"Demo loaded ({n})")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not seed demo data: {e}")
+            return
+        self.refresh_sessions()
+
     def toggle_theme(self):
         """Flip light/dark theme and repaint theme-aware widgets."""
         new_mode = "light" if theme_mode() == "dark" else "dark"
@@ -487,7 +535,7 @@ class MainWindow(QMainWindow):
             apply_theme(app, new_mode)
         self._refresh_theme_chrome(new_mode)
         self.risk_gauge.update()
-        self.refresh_sessions()
+        self.refresh_sessions()  # repaints table pills + trend chart
 
     def _refresh_theme_chrome(self, mode: str | None = None):
         """Refresh dynamic-accent widgets (QSS cannot read runtime props)."""
