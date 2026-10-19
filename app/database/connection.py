@@ -361,9 +361,14 @@ class DatabaseManager:
             "masking_alerts": masking_alerts,
         }
 
-    def get_daily_avg_dsi(self, days: int = 14) -> List[Dict[str, object]]:
+    def get_daily_avg_dsi(
+        self, days: int = 14, employee_id: str | None = None
+    ) -> List[Dict[str, object]]:
         """
-        Company-wide daily average DSI for the past N days (trend chart).
+        Daily average DSI for the past N days (trend chart).
+
+        Company-wide when employee_id is None; a single employee's daily
+        scores when set (prefix match, same as get_checkins).
 
         Returns one entry per calendar day (oldest first); days with no
         check-ins get avg_dsi=None so the chart can render gaps.
@@ -378,17 +383,31 @@ class DatabaseManager:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT substr(timestamp, 1, 10) AS day,
-                   AVG(dsi) AS avg_dsi,
-                   COUNT(*) AS n
-            FROM checkins
-            WHERE date(substr(timestamp, 1, 10)) >= date('now', ?)
-            GROUP BY day
-            """,
-            (f"-{int(days) - 1} days",),
-        )
+        if employee_id:
+            cursor.execute(
+                """
+                SELECT substr(timestamp, 1, 10) AS day,
+                       AVG(dsi) AS avg_dsi,
+                       COUNT(*) AS n
+                FROM checkins
+                WHERE date(substr(timestamp, 1, 10)) >= date('now', ?)
+                  AND employee_id LIKE ?
+                GROUP BY day
+                """,
+                (f"-{int(days) - 1} days", f"{employee_id}%"),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT substr(timestamp, 1, 10) AS day,
+                       AVG(dsi) AS avg_dsi,
+                       COUNT(*) AS n
+                FROM checkins
+                WHERE date(substr(timestamp, 1, 10)) >= date('now', ?)
+                GROUP BY day
+                """,
+                (f"-{int(days) - 1} days",),
+            )
         rows = {r["day"]: (r["avg_dsi"], r["n"]) for r in cursor.fetchall()}
         conn.close()
 

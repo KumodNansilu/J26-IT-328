@@ -306,13 +306,48 @@ class MainWindow(QMainWindow):
 
         table_group = QGroupBox("Audit Log  —  latest sessions")
         table_layout = QVBoxLayout(table_group)
+
+        # Employee search bar (filters table by employee ID)
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍  Search employee  (e.g. EMP001) …")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._on_search_changed)
+        search_row.addWidget(self.search_input, 1)
+
+        # Masking-type filter: All / Traditional / Forced / No masking
+        from PySide6.QtWidgets import QComboBox
+
+        self.mask_filter = QComboBox()
+        self.mask_filter.addItems(
+            ["All sessions", "🎭 Traditional masking", "😐 Forced composure", "✅ No masking"]
+        )
+        self.mask_filter.setFixedWidth(210)
+        self.mask_filter.setCursor(Qt.PointingHandCursor)
+        self.mask_filter.currentIndexChanged.connect(lambda _i: self.refresh_sessions())
+        search_row.addWidget(self.mask_filter)
+
+        self.search_count = QLabel("")
+        self.search_count.setObjectName("appSubtitle")
+        search_row.addWidget(self.search_count)
+        clear_btn = QPushButton("✕")
+        clear_btn.setObjectName("ghost")
+        clear_btn.setFixedSize(36, 32)
+        clear_btn.setCursor(Qt.PointingHandCursor)
+        clear_btn.setToolTip("Clear search + filter")
+        clear_btn.clicked.connect(self._clear_filters)
+        search_row.addWidget(clear_btn)
+        table_layout.addLayout(search_row)
+
         self.session_table = SessionTable()
         table_layout.addWidget(self.session_table)
         right_layout.addWidget(table_group, 1)
 
-        # 14-day company trend chart
+        # 14-day trend chart (title flips company <-> employee)
         trend_group = QGroupBox("Company Trend  —  avg DSI, past 14 days")
         trend_layout = QVBoxLayout(trend_group)
+        self.trend_group = trend_group
         self.trend_sub = QLabel("Company-wide daily average DSI")
         self.trend_sub.setObjectName("appSubtitle")
         trend_layout.addWidget(self.trend_sub)
@@ -479,30 +514,54 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
 
     def refresh_sessions(self):
-        """Refresh the session table with latest data."""
-        sessions = self.db.get_checkins(limit=50)
-        self.session_table.set_sessions(sessions)
+        """Refresh the session table (respects search + masking filter)."""
+        query = self.search_input.text().strip() if hasattr(self, "search_input") else ""
+        mode = self.mask_filter.currentIndex() if hasattr(self, "mask_filter") else 0
+
+        if query:
+            sessions = self.db.get_checkins(employee_id=query, limit=500)
+        else:
+            sessions = self.db.get_checkins(limit=200)
+
+        # Masking filter: 0=All, 1=Traditional, 2=Forced, 3=No masking
+        if mode == 1:
+            sessions = [s for s in sessions if (s.get("masking_alert") or "").startswith("Traditional")]
+        elif mode == 2:
+            sessions = [s for s in sessions if (s.get("masking_alert") or "").startswith("Forced")]
+        elif mode == 3:
+            sessions = [s for s in sessions if not s.get("masking_alert")]
+
+        total = self.db.get_checkins(limit=500)
+        filt_names = ["", "🎭 Traditional", "😐 Forced", "✅ Clean"]
+        tag = f" • {filt_names[mode]}" if mode else ""
+        self.search_count.setText(f"{len(sessions)} / {len(total)} shown{tag}")
+        self.session_table.set_sessions(sessions[:200])
 
         # Update gauge with latest DSI if available
         if sessions:
             self.risk_gauge.set_dsi(sessions[0]["dsi"])
 
-        # Update 14-day company trend chart
+        # Trend chart: employee view when searching, company view otherwise
         try:
-            daily = self.db.get_daily_avg_dsi(14)
+            emp = query if query else None
+            if emp:
+                self.trend_group.setTitle(f"{emp} — personal DSI, past 14 days")
+            else:
+                self.trend_group.setTitle("Company Trend  —  avg DSI, past 14 days")
+            daily = self.db.get_daily_avg_dsi(14, employee_id=emp)
             self.trend_chart.set_data(daily)
             vals = [d["avg_dsi"] for d in daily if d["avg_dsi"] is not None]
+            scope = f"{emp} — personal daily DSI" if emp else "Company-wide daily average DSI"
+            days_hit = sum(1 for d in daily if d["avg_dsi"] is not None)
             if vals:
                 latest = vals[-1]
                 lo, hi = min(vals), max(vals)
                 self.trend_sub.setText(
-                    f"Company-wide daily average DSI   •   "
-                    f"today {latest:.3f}   •   14-day range {lo:.2f}–{hi:.2f}"
+                    f"{scope}   •   latest {latest:.3f}   •   "
+                    f"{days_hit}/14 days   •   range {lo:.2f}–{hi:.2f}"
                 )
             else:
-                self.trend_sub.setText(
-                    "Company-wide daily average DSI   •   no data yet"
-                )
+                self.trend_sub.setText(f"{scope}   •   no data yet")
         except Exception:
             pass
 
@@ -516,6 +575,25 @@ class MainWindow(QMainWindow):
             self.stat_mask._value_label.setText(str(stats.get("masking_alerts", 0)))
         except Exception:
             pass
+
+    def _clear_filters(self):
+        """Reset search text + masking filter."""
+        self.search_input.clear()
+        self.mask_filter.setCurrentIndex(0)
+        self.refresh_sessions()
+
+    def _on_search_changed(self, text: str):
+        """Live-filter the audit table as the user types."""
+        self.refresh_sessions()
+        # Keep gauge on the filtered employee's latest session
+        query = text.strip()
+        if query and self.session_table.rowCount() > 0:
+            try:
+                dsi_text = self.session_table.item(0, 5).text()
+                dsi_val = float("".join(c for c in dsi_text if c.isdigit() or c == "."))
+                self.risk_gauge.set_dsi(dsi_val)
+            except Exception:
+                pass
 
     def load_demo_trend(self):
         """Seed demo check-ins across 14 days, then refresh."""

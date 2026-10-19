@@ -1,15 +1,16 @@
-# Multimodal Depression Detection - Component 4
+# MindSync-Enterprise — Multimodal Depression Detection
 
-Central Decision Engine & HR Analytics Dashboard for a Multimodal Depression Detection system.
+Central Decision Engine (DSI fusion) & HR Analytics Dashboard. Fuses text, video and audio
+scores into a Depression Severity Index (DSI) with emotional-masking detection.
 
 ## Overview
 
-This component receives 3 normalized float scores from a database:
-- **TBS** (Text Behavioral Score, float 0.0 - 1.0)
-- **VBS** (Video Behavioral Score, float 0.0 - 1.0)
-- **ABS** (Audio Behavioral Score, float 0.0 - 1.0)
+This component receives 3 normalized float scores per check-in:
+- **TBS** (Text-Based Score, float 0.0 - 1.0)
+- **VBS** (Video-Based Score, float 0.0 - 1.0)
+- **ABS** (Audio-Based Score, float 0.0 - 1.0)
 
-It performs **Late-Stage Decision-Level Fusion** through 3 stages:
+It performs **late-stage decision-level fusion** through 3 stages:
 
 ### 1. Discordance Delta Calculation
 ```
@@ -19,9 +20,10 @@ It performs **Late-Stage Decision-Level Fusion** through 3 stages:
 - **High negative Δ (< -0.50)**: Forced Composure (Distressed Text, Calm Exterior)
 
 ### 2. PyTorch Gated Multimodal Fusion Engine (GMU)
-- Ingests `[TBS, VBS, ABS, Δ]` into an `nn.Linear(4, 3)` gating layer
-- Applies `nn.Softmax(dim=-1)` to yield dynamic weights: `[w_text, w_video, w_audio]` summing to 1.0
-- Calculates Final Depression Severity Index (DSI):
+- Ingests `[TBS, VBS, ABS, Δ]` into a gating MLP (`Linear(4, 16) → ReLU → Linear(16, 3)`,
+  `hidden_dim=0` falls back to the plain `Linear(4, 3)` baseline)
+- Applies `Softmax(dim=-1)` to yield dynamic weights `[w_text, w_video, w_audio]` summing to 1.0
+- Calculates the final Depression Severity Index (DSI):
 ```
 DSI = (w_text * TBS) + (w_video * VBS) + (w_audio * ABS)
 ```
@@ -32,98 +34,133 @@ DSI = (w_text * TBS) + (w_video * VBS) + (w_audio * ABS)
 | DSI >= 0.70 | RED TIER | High Risk |
 | 0.45 <= DSI < 0.70 | YELLOW TIER | Moderate Risk |
 | DSI < 0.45 | GREEN TIER | Low Risk |
-
 ## Project Structure
 
-```
-multimodal-depression-detection/
-├── .gitignore
+``
+MindSync-Enterprise/
 ├── README.md
+├── .gitignore
 ├── requirements.txt
+├── requirements-dev.txt
+├── .env.example
 │
-├── core_fusion_engine/            <-- [MAIN MODULE]
-│   ├── __init__.py
-│   ├── config.py                  <-- App settings and alert thresholds
-│   ├── discordance.py             <-- Discordance Delta (Δ) logic
-│   ├── fusion_model.py            <-- PyTorch GatedMultimodalFusionEngine
-│   ├── gmu_fusion_model.pth       <-- Saved PyTorch model weights
-│   ├── severity.py                <-- Risk tier classification
-│   └── train_gmu.py               <-- Training script
+├── app/                                <-- HR dashboard app (PySide6)
+│   ├── main.py                         <-- Desktop UI entry point
+│   ├── config.py                       <-- App-level config placeholder
+│   ├── resources/styles/main.qss       <-- Legacy stylesheet (theme now generated)
+│   ├── ui/
+│   │   ├── __init__.py                 <-- Light/dark theme tokens
+│   │   ├── main_window.py              <-- (placeholder)
+│   │   ├── dialogs/                    <-- login_dialog, consent_dialog (placeholders)
+│   │   ├── pages/                      <-- 11 page placeholders
+│   │   └── widgets/
+│   │       ├── risk_gauge.py           <-- DSI dial
+│   │       ├── session_table.py        <-- Audit log table
+│   │       └── trend_chart.py          <-- 14-day trend line (matplotlib)
+│   ├── services/
+│   │   └── dsi_service.py              <-- AlertController (HIGH_RISK / DISCORDANCE / ESCALATION)
+│   ├── database/
+│   │   └── connection.py               <-- SQLite DatabaseManager (hr_users, checkins)
+│   ├── core/                           <-- security/permissions/validators/exceptions (placeholders)
+│   └── utils/
+│       └── theme.py                    <-- Light/dark theme manager (QSettings persisted)
 │
-├── hr_dashboard_app/              <-- [UI & CONTROLLER MODULE]
-│   ├── __init__.py
-│   ├── main_app.py                <-- PySide6 desktop UI entry point
-│   ├── database_manager.py        <-- SQLite DB (hr_users, checkins)
-│   ├── controllers/
-│   │   ├── __init__.py
-│   │   └── alert_controller.py    <-- Alert generation logic
-│   └── ui_components/
+├── ai_services/
+│   ├── text_analysis/                  <-- Member 1 (TBS extractor, placeholder)
+│   ├── video_facial_emotion_behavior/  <-- Member 2 (VBS extractor, placeholder)
+│   ├── audio_analysis/                 <-- Member 3 (ABS extractor, placeholder)
+│   └── dsi_fusion_member4/             <-- [YOUR MODULE: DSI fusion]
 │       ├── __init__.py
-│       ├── risk_gauge.py          <-- Green/Yellow/Red DSI gauge
-│       └── session_table.py       <-- Audit log table view
-│
-├── unimodal_services/             <-- [TEAM MEMBERS' MODULES]
-│   ├── text_nlp_service/          <-- Member 1 (TBS Extractor)
-│   ├── vision_cv_service/         <-- Member 2 (VBS Extractor)
-│   └── audio_speech_service/      <-- Member 3 (ABS Extractor)
+│       ├── config.py                   <-- Thresholds, paths, training hyperparams
+│       ├── discordance_delta.py        <-- Discordance Delta logic
+│       ├── softmax_gmu.py              <-- GatedMultimodalFusionEngine
+│       ├── severity.py                 <-- Risk-tier classification
+│       ├── dsi_calculator.py           <-- (placeholder)
+│       ├── train_gmu.py                <-- Training script
+│       └── gmu_fusion_model.pth        <-- Trained weights
 │
 ├── data/
-│   ├── checkin_dataset.csv        <-- Dataset for model training
-│   └── local_audit_logs.db        <-- Local SQLite database
+│   ├── checkin_dataset.csv             <-- Synthetic training set (2000 rows)
+│   └── local_audit_logs.db             <-- SQLite audit log (git-tracked demo data)
 │
-└── tests/                         <-- Automated unit tests
-    ├── test_discordance.py
-    └── test_fusion_model.py
-```
+├── models/
+│   └── README.md                       <-- (placeholder)
+│
+├── tests/
+│   ├── test_discordance.py             <-- 10 tests: Delta math + masking labels
+│   └── test_fusion_model.py            <-- 19 tests: GMU, risk tiers, DB logging
+│
+├── scripts/
+│   ├── initialize_database.py          <-- (placeholder)
+│   └── package_windows.ps1             <-- (placeholder)
+│
+└── docs/                               <-- architecture/setup/integration/user/privacy (placeholders)
+``
+## Setup and Installation
 
-## Setup & Installation
+``bash
+# 1. Open the project folder (NOT the '- Copy' duplicate, if one exists)
+cd '4 year Final project sadeesh'
 
-```bash
-# Install dependencies
+# 2. Install runtime + dev dependencies (matplotlib is required for the trend chart)
 pip install -r requirements.txt
-```
+pip install -r requirements-dev.txt
+``
 
 ## Training the Model
 
-```bash
-# Generate 1,000 synthetic samples and train for 40 epochs
-python -m core_fusion_engine.train_gmu
-```
+``bash
+# Generate 2,000 synthetic samples and train for 200 epochs (TRAIN_EPOCHS=200)
+python -m ai_services.dsi_fusion_member4.train_gmu
+``
 
 This will:
-1. Generate 1,000 synthetic check-in samples covering 4 scenarios:
-   - Honest / Consistent (40%)
-   - Traditional Emotional Masking (25%)
-   - Forced Composure (25%)
-   - Mixed / Moderate (10%)
-2. Train the GMU model for 40 epochs using Adam optimizer and MSE loss
-3. Save weights to `core_fusion_engine/gmu_fusion_model.pth`
+1. Generate 2,000 synthetic check-in samples covering 4 scenarios:
+   - Honest / Consistent (40 pct = 800)
+   - Traditional Emotional Masking (25 pct = 500)
+   - Forced Composure (25 pct = 500)
+   - Mixed / Moderate (10 pct = 200)
+2. Train the GMU model for 200 epochs (Adam, MSE loss, ReduceLROnPlateau, best-checkpoint kept)
+3. Save the CSV to data/checkin_dataset.csv and weights to ai_services/dsi_fusion_member4/gmu_fusion_model.pth
 
 ## Running the HR Dashboard
 
-```bash
+``bash
 # Launch the PySide6 desktop application
-python hr_dashboard_app/main_app.py
-```
+python app/main.py
+``
 
 ### Login Credentials
-- **Username**: `admin@company.com`
-- **Password**: `admin123`
+- **Username**: admin@company.com
+- **Password**: admin123
 
 ### Dashboard Features
-1. **Login Window** - Validates against `hr_users` table
-2. **Simulator Panel** - Manually test TBS, VBS, ABS inputs
-3. **DSI Gauge** - Visual Green/Yellow/Red risk indicator
-4. **Weight Breakdown** - Shows % weights for Text, Video, Audio
-5. **Warning Banner** - Triggers when |Δ| > 0.50 (masking detected)
-6. **Audit Log Table** - Displays historical DB records
-
+1. **Login Window** - Validates against hr_users table
+2. **Header stats** - Sessions / Avg DSI / High risk / Masking pills + light-dark toggle (persisted)
+3. **DSI Gauge** - Segmented Green/Yellow/Red dial with needle + today readout
+4. **New Check-in Simulator** - TBS/VBS/ABS sliders + Evaluate Session
+5. **Weight Breakdown** - Text / Video / Audio pct bars from the GMU gate
+6. **Warning Banner** - Triggers when absolute Delta > 0.50 (masking detected)
+7. **Audit Log Table** - Search by employee ID + masking-type filter (All / Traditional / Forced / No masking)
+8. **Company Trend Chart** - Daily avg DSI line for past 14 days with risk bands; switches to the searched employee personal line when filtering. Load 14-day demo seeds demo rows so the wave is visible.
 ## Running Tests
 
-```bash
-# Run all unit tests
+``bash
+# Full suite (29 tests: 10 discordance + 19 fusion/risk/DB)
 python -m pytest tests/ -v
-```
+
+# Single modules
+python -m pytest tests/test_discordance.py -v
+python -m pytest tests/test_fusion_model.py -v
+
+# With coverage on the fusion package
+python -m pytest tests/ -q --cov=ai_services.dsi_fusion_member4 --cov-report=term-missing
+``
+
+Notes:
+- Tests use temporary SQLite databases - your real data/local_audit_logs.db is untouched.
+- tests/unit, tests/integration, tests/ui exist as empty placeholders; the runnable tests are tests/test_discordance.py and tests/test_fusion_model.py.
+- What is covered: Discordance Delta math (honest/masking/forced/max/extremes), masking labels incl. exact-threshold 0.50 = no alert, GMU shapes/softmax/DSI range/predict tuple/weight-shifting/gradient-flow/save-load, risk-tier boundaries (incl. 0.45 = YELLOW, 0.70 = RED), DB save/retrieve, masking-alert storage, login valid/invalid, high-risk filter, summary stats.
 
 ## Database Schema
 
@@ -132,8 +169,8 @@ python -m pytest tests/ -v
 |--------|------|-------------|
 | id | INTEGER | Primary key |
 | username | TEXT | Login email (unique) |
-| password | TEXT | Login password |
-| full_name | TEXT | User's full name |
+| password | TEXT | Login password (stored in plaintext - not encrypted) |
+| full_name | TEXT | Full name |
 | role | TEXT | User role |
 | created_at | TEXT | Creation timestamp |
 
@@ -142,11 +179,13 @@ python -m pytest tests/ -v
 |--------|------|-------------|
 | id | INTEGER | Primary key |
 | employee_id | TEXT | Employee identifier |
-| timestamp | TEXT | Check-in timestamp |
+| timestamp | TEXT | Check-in timestamp (ISO) |
 | tbs | REAL | Text-Based Score (0-1) |
 | vbs | REAL | Video-Based Score (0-1) |
 | abs | REAL | Audio-Based Score (0-1) |
 | dsi | REAL | Fused DSI (0-1) |
 | delta | REAL | Discordance Delta |
 | risk_tier | TEXT | GREEN / YELLOW / RED |
-| masking_alert | TEXT | Masking alert message |
+| masking_alert | TEXT | Masking alert message (NULL when none) |
+
+Privacy note: audit-log contents are NOT encrypted - anyone with the .db file can read all scores. Password hashing + column encryption are planned, not yet implemented.
