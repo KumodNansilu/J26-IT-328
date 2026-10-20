@@ -2,6 +2,9 @@
 torch>=2.0.0
 numpy>=1.24.0
 pandas>=2.0.0
+pymongo>=4.0.0
+dnspython>=2.0.0
+python-dotenv>=1.0.0
 
 # UI
 PySide6>=6.5.0

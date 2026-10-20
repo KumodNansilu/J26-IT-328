@@ -63,11 +63,18 @@ from app.utils.theme import apply_theme, saved_mode
 # ---------------------------------------------------------------------------
 
 class LoginDialog(QDialog):
-    """Login window validating against the hr_users table."""
+    """Login window: MongoDB MindSync_DB.users first, SQLite fallback."""
 
     def __init__(self, db: DatabaseManager, parent=None):
         super().__init__(parent)
         self.db = db
+        try:
+            from app.database.mongo_connection import MongoUserManager
+
+            self.mongo = MongoUserManager()
+        except Exception as e:
+            print(f"Mongo unavailable for login ({e}); using SQLite only.")
+            self.mongo = None
         self.setWindowTitle("MindSync — HR Login")
         self.setFixedSize(420, 330)
 
@@ -122,9 +129,17 @@ class LoginDialog(QDialog):
         self.password_input.returnPressed.connect(self._handle_login)
 
     def _handle_login(self):
-        """Validate credentials and accept if valid."""
+        """Validate credentials (Mongo first, SQLite fallback) and accept if valid."""
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
+
+        if self.mongo is not None:
+            try:
+                if self.mongo.validate_login(username, password):
+                    self.accept()
+                    return
+            except Exception as e:
+                print(f"Mongo login failed, trying SQLite: {e}")
 
         user = self.db.validate_login(username, password)
         if user:
@@ -215,6 +230,13 @@ class MainWindow(QMainWindow):
         self.stat_mask = self._stat_pill("Masking", "0", "YELLOW")
         for pill in (self.stat_total, self.stat_avg, self.stat_red, self.stat_mask):
             header_bar.addWidget(pill)
+
+        # Add New User button (MongoDB form)
+        self.add_user_btn = QPushButton("＋ Add New User")
+        self.add_user_btn.setCursor(Qt.PointingHandCursor)
+        self.add_user_btn.setToolTip("Add HR user to MongoDB MindSync_DB.users")
+        self.add_user_btn.clicked.connect(self.open_add_user)
+        header_bar.addWidget(self.add_user_btn)
 
         # Theme toggle (sun/moon)
         self.theme_btn = QPushButton()
@@ -604,6 +626,22 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Could not seed demo data: {e}")
             return
         self.refresh_sessions()
+
+    def open_add_user(self):
+        """Open the Add-New-User form (MongoDB MindSync_DB.users)."""
+        try:
+            from app.database.mongo_connection import MongoUserManager
+            from app.ui.dialogs.add_user_dialog import AddUserDialog
+
+            mongo = MongoUserManager()
+        except Exception as e:
+            QMessageBox.critical(
+                self, "MongoDB Error",
+                f"Cannot connect to MongoDB.\nCheck MONGODB_URI in .env\n\n{e}",
+            )
+            return
+        dlg = AddUserDialog(mongo, self)
+        dlg.exec()
 
     def toggle_theme(self):
         """Flip light/dark theme and repaint theme-aware widgets."""
