@@ -17,3 +17,11 @@ EMOTIONS: tuple[str, ...] = (
 
 NUM_EMOTIONS: int = len(EMOTIONS)
 
+# --- Model metadata ---------------------------------------------------
+#
+# Single shared location for the checkpoint + its metadata filename.
+# train_fer.py writes these; predict.py reads them. Both must reference
+# these constants so training/inference can never drift.
+DEFAULT_CKPT = "models/fer2013_cnn_best.pt"
+DEFAULT_META = "models/fer2013_cnn_meta.json"
+

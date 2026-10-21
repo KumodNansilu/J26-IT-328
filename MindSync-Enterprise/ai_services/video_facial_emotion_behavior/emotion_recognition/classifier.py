@@ -25,9 +25,13 @@ def model_status() -> dict:
 
 
 def load_model(path: str | None = None) -> dict:
-    """Hook for wiring a trained FER2013 model later. Stub: reports missing."""
-    _model_info.update(loaded=False, path=path)
-    return model_status()
+    """Load the trained FER2013 CNN via predict.py. Stub reports missing."""
+    try:
+        from .predict import load_model as _real_load
+        return _real_load(path)
+    except Exception:
+        _model_info.update(loaded=False, path=path)
+        return model_status()
 
 
 def validate_probs(probs) -> tuple[bool, str]:
@@ -46,11 +50,9 @@ def validate_probs(probs) -> tuple[bool, str]:
 
 
 def predict_probs(face_crop_bgr):
-    """Frame-level inference. Raises ModelNotAvailableError until wired."""
-    _ = (face_crop_bgr, EMOTIONS)
-    raise ModelNotAvailableError(
-        "No trained CNN wired yet — train/evaluate on FER2013 first, then "
-        "implement predict_probs() to return 7 probabilities in EMOTIONS order.")
+    """Frame-level inference via predict.py. Raises until a model is wired."""
+    from .predict import predict_probs as _real_predict
+    return _real_predict(face_crop_bgr)
 
 
 def aggregate_frame_probs(list_of_probs):

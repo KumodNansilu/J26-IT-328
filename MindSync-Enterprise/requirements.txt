@@ -8,3 +8,5 @@ torch>=2.2
 librosa>=0.10
 scikit-learn>=1.4
 matplotlib>=3.8
+# Dataset acquisition (scripts/download_fer2013.py). Official Kaggle library.
+kagglehub>=0.3

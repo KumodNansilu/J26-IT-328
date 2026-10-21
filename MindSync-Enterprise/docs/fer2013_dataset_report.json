@@ -1,0 +1,109 @@
+{
+  "csv_path": "C:\\Users\\User\\Desktop\\J26-IT-328\\MindSync-Enterprise\\data\\fer2013\\fer2013.csv",
+  "csv_size_bytes": 301072766,
+  "header": [
+    "emotion",
+    "pixels",
+    "Usage"
+  ],
+  "has_emotion": true,
+  "has_pixels": true,
+  "has_usage": true,
+  "expected_columns_present": true,
+  "total_rows": 35887,
+  "valid_rows": 35887,
+  "usage_counts": {
+    "Training": 28709,
+    "PublicTest": 3589,
+    "PrivateTest": 3589
+  },
+  "usages_seen": [
+    "PrivateTest",
+    "PublicTest",
+    "Training"
+  ],
+  "expected_usages_present": true,
+  "labels_seen": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "labels_valid_0_to_6": true,
+  "class_counts_by_index": {
+    "0": 4953,
+    "1": 547,
+    "2": 5121,
+    "3": 8989,
+    "4": 6077,
+    "5": 4002,
+    "6": 6198
+  },
+  "class_counts_by_name": {
+    "Angry": 4953,
+    "Disgust": 547,
+    "Fear": 5121,
+    "Happy": 8989,
+    "Sad": 6077,
+    "Surprise": 4002,
+    "Neutral": 6198
+  },
+  "usage_class_counts": {
+    "PrivateTest|Angry": 491,
+    "PrivateTest|Disgust": 55,
+    "PrivateTest|Fear": 528,
+    "PrivateTest|Happy": 879,
+    "PrivateTest|Sad": 594,
+    "PrivateTest|Surprise": 416,
+    "PrivateTest|Neutral": 626,
+    "PublicTest|Angry": 467,
+    "PublicTest|Disgust": 56,
+    "PublicTest|Fear": 496,
+    "PublicTest|Happy": 895,
+    "PublicTest|Sad": 653,
+    "PublicTest|Surprise": 415,
+    "PublicTest|Neutral": 607,
+    "Training|Angry": 3995,
+    "Training|Disgust": 436,
+    "Training|Fear": 4097,
+    "Training|Happy": 7215,
+    "Training|Sad": 4830,
+    "Training|Surprise": 3171,
+    "Training|Neutral": 4965
+  },
+  "pixel_len_histogram": {
+    "2304": 35887
+  },
+  "rows_with_wrong_pixel_count": 0,
+  "examples_wrong_pixel_count": [],
+  "rows_with_bad_label": 0,
+  "examples_bad_label": [],
+  "rows_with_bad_usage": 0,
+  "examples_bad_usage": [],
+  "rows_with_non_integer_pixels": 0,
+  "rows_with_missing_fields": 0,
+  "duplicate_rows": 1853,
+  "unique_pixel_rows": 34034,
+  "image_size_expected": "48x48",
+  "pixels_per_image_expected": 2304,
+  "project_loader": {
+    "kept": 35887,
+    "skipped": 0,
+    "total_seen": 35887,
+    "class_counts": {
+      "Angry": 4953,
+      "Fear": 5121,
+      "Sad": 6077,
+      "Neutral": 6198,
+      "Happy": 8989,
+      "Surprise": 4002,
+      "Disgust": 547
+    },
+    "problem_count": 0,
+    "problem_sample": []
+  },
+  "project_loader_kept_matches_stream": true
+}

@@ -1,0 +1,102 @@
+﻿DIFF (old -> new):
+--- old
++++ new
+@@ -1,3 +1,4 @@
++# -*- coding: utf-8 -*-
+ """Frame-level emotion inference: FaceFrame.crop -> 7 probs, EMOTIONS order.
+ 
+ Loads models/fer2013_cnn_best.pt (+ meta) when present; otherwise raises
+@@ -14,42 +15,72 @@
+ from .cnn_model import MODEL_INPUT_SIZE, build_model, preprocess_crop
+ from .labels import DEFAULT_CKPT, DEFAULT_META, EMOTIONS, NUM_EMOTIONS
+ 
++
+ DEFAULT_CKPT = "models/fer2013_cnn_best.pt"
+ DEFAULT_META = "models/fer2013_cnn_meta.json"
+ 
+-_model = None
+-_model_info: dict = {"loaded": False, "path": None, "device": "cpu"}
+ 
++def _read_meta(meta_path: str):
++    # Fail-closed: missing / malformed / incompatible metadata -> clear error.
++    if not os.path.exists(meta_path):
++        raise ModelNotAvailableError(
++            "Metadata file missing for %s: %s. Run training first."
++            % (DEFAULT_CKPT, meta_path))
++    try:
++        with open(meta_path, encoding="utf-8") as fh:
++            meta = json.load(fh)
++    except Exception as exc:
++        raise ModelNotAvailableError(
++            "Metadata file is not valid JSON (%s): %s." % (meta_path, exc)
++        ) from exc
++    if not isinstance(meta, dict):
++        raise ModelNotAvailableError(
++            "Metadata file is not a JSON object (%s)." % meta_path)
+ 
+-def model_status() -> dict:
+-    return dict(_model_info)
++    order = meta.get("label_order")
++    expected_input = [1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]
++    if order is None:
++        raise ModelNotAvailableError(
++            "Metadata file has no 'label_order' key (%s)." % meta_path)
++    if list(order) != list(EMOTIONS):
++        raise ModelNotAvailableError(
++            "Checkpoint label order %s != labels.py %s. "
++            "Retrain so metadata and labels.py agree."
++            % (order, list(EMOTIONS)))
++    if meta.get("input") != expected_input:
++        raise ModelNotAvailableError(
++            "Checkpoint input %s != expected %s. "
++            "Retrain so metadata and model architecture agree."
++            % (meta.get("input"), expected_input))
++    return meta
+ 
+ 
+ def load_model(path: str | None = None) -> dict:
+-    """Load checkpoint + verify label order. Raises if missing/mismatch."""
+-    import json
+-    import os
+-
++    """Load checkpoint + verify metadata. Raises ModelNotAvailableError if
++    the weights are absent or the metadata is missing / malformed /
++    incompatible with this project's labels and input shape."""
+     global _model
+     ckpt = path or DEFAULT_CKPT
+     if not os.path.exists(ckpt):
+         _model_info.update(loaded=False, path=ckpt)
+         raise ModelNotAvailableError(
+-            f"No trained CNN at {ckpt} ù run smoke/full training first "
+-            "(stages 5+ need your approval).")
+-    meta_path = os.path.join(os.path.dirname(ckpt) or ".",
+-                             os.path.basename(DEFAULT_META))
++            "No trained CNN at %s - run smoke/full training first "
++            "(stages 5+ need your approval)." % ckpt)
++
++    meta_path = os.path.join(
++        os.path.dirname(ckpt) or ".", os.path.basename(DEFAULT_META))
+     if os.path.exists(meta_path):
++        # Validate each piece; an unexpected failure is surfaced clearly
++        # rather than silently ignored.
+         try:
+-            meta = json.load(open(meta_path, encoding="utf-8"))
+-            order = meta.get("label_order")
+-            if order is not None and list(order) != list(EMOTIONS):
+-                raise ValueError(
+-                    f"Checkpoint label order {order} != labels.py {EMOTIONS}.")
+-        except ValueError:
++            _read_meta(meta_path)
++        except ModelNotAvailableError:
+             raise
+-        except Exception:
+-            pass  # unreadable meta: still try weights, order checked by test
++        except Exception as exc:
++            raise ModelNotAvailableError(
++                "Metadata validation failed for %s: %s."
++                % (meta_path, exc)) from exc
++
+     import torch
+ 
+     device = "cud
+WROTE MindSync-Enterprise\ai_services\video_facial_emotion_behavior\emotion_recognition\predict.py

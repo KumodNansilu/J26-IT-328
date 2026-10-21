@@ -17,8 +17,13 @@ models/*.pt
 models/*.pth
 models/*.onnx
 models/*.bin
+models/fer2013_cnn_meta.json
 data/sample_data/*
 !data/sample_data/.gitkeep
+# FER2013 dataset (download only after source approval; never commit)
+data/fer2013/
+data/fer2013.csv
+data/*.csv
 # Build / dist
 build/
 dist/

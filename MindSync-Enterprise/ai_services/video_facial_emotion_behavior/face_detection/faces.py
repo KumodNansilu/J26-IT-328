@@ -16,22 +16,40 @@ def _get_detector():
         import cv2
 
         # opencv-python 5.x wheels no longer bundle the Haar XML next to
-        # cv2.data. Try in order: bundled path -> opencv-contrib data dir ->
-        # local project copy (models/haarcascade). First that loads wins.
-        candidates = [
-            os.path.join(getattr(cv2, "data", None).haarcascades
-                         if getattr(cv2, "data", None) else "",  # type: ignore
-                         "haarcascade_frontalface_default.xml"),
-        ]
+        # cv2.data. Try in order: bundled path -> local project copy
+        # (MindSync-Enterprise/models/haarcascade). First that loads wins.
+        # NOTE: skip empty/missing candidates — CascadeClassifier("") logs
+        # scary C++ errors and returns empty, which is a success-path trap.
+        candidates = []
+        try:
+            data_dir = getattr(getattr(cv2, "data", None),
+                               "haarcascades", "")
+            if data_dir:
+                candidates.append(os.path.join(
+                    data_dir, "haarcascade_frontalface_default.xml"))
+        except Exception:
+            pass
         try:
             from pathlib import Path
-            root = Path(__file__).resolve().parents[4]
+
+            # faces.py -> face_detection -> video_facial_emotion_behavior
+            # -> ai_services -> MindSync-Enterprise (3 levels up).
+            root = Path(__file__).resolve().parents[3]
             candidates.append(
                 str(root / "models" / "haarcascade_frontalface_default.xml"))
         except Exception:
             pass
+        # De-dup + drop empties / missing files before touching OpenCV.
+        seen = set()
+        usable = []
+        for c in candidates:
+            if not c or c in seen:
+                continue
+            seen.add(c)
+            if os.path.exists(c):
+                usable.append(c)
         last = ""
-        for cascade_path in candidates:
+        for cascade_path in usable:
             try:
                 det = cv2.CascadeClassifier(cascade_path)
                 if not det.empty():
@@ -43,10 +61,9 @@ def _get_detector():
                 continue
         raise RuntimeError(
             "Could not load Haar cascade. Tried: "
-            + "; ".join(candidates)
-            + ". Fix: pip install opencv-contrib-python "
-              "(ships cv2/data XML), or place "
-              "'haarcascade_frontalface_default.xml' in models/."
+            + ("; ".join(usable) if usable else "(no candidate files found)")
+            + ". Fix: place 'haarcascade_frontalface_default.xml' in "
+              "MindSync-Enterprise/models/ (already done for this project)."
         )
     return _detector
 
