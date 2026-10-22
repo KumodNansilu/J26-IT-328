@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import logging
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QObject
 from PySide6.QtGui import QImage, QPixmap
@@ -13,6 +14,8 @@ from app.config import VIDEO_PICKER_FILTER, VIDEO_TARGET_DURATION_S
 from app.services.video_input_service import CheckResult, validate_video_input
 from app.utils.paths import is_temp_mindsync_path
 from app.ui.pages.webcam_recorder import RecorderWorker
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationWorker(QObject):
@@ -55,6 +58,7 @@ class ValidationWorker(QObject):
                 self._path, duration_override_s=self._wall,
                 is_cancelled=self._is_cancelled, on_progress=_forward)
         except Exception as e:  # noqa: BLE001 — surface to UI, never crash
+            logger.exception("Video validation worker failed")
             res = CheckResult(False, "error", f"Validation failed: {e}", {})
         self.progress.emit(100)
         self.done.emit(res)
@@ -102,7 +106,7 @@ class VideoCheckinPage(QWidget):
         title = QLabel("Video Check-in")
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
         root.addWidget(title)
-        info = QLabel("Upload a ~30-second video, or record one with your webcam. "
+        info = QLabel("Upload a ~45-second video, or record one with your webcam. "
                       "Analysis starts only after you confirm. "
                       "Your original file is never deleted.")
         info.setWordWrap(True)
@@ -120,7 +124,7 @@ class VideoCheckinPage(QWidget):
         ul.addLayout(row)
         root.addWidget(up)
 
-        rec = QGroupBox("Option 2 — Record Video (30 s)")
+        rec = QGroupBox(f"Option 2 — Record Video ({VIDEO_TARGET_DURATION_S:.0f} s)")
         rl = QVBoxLayout(rec)
         self.lbl_preview = QLabel("Camera preview appears here.")
         self.lbl_preview.setAlignment(Qt.AlignCenter)
@@ -303,7 +307,10 @@ class VideoCheckinPage(QWidget):
             self.lbl_validation.setText("Failed: " + res.message)
             self.lbl_status.setText("Status: invalid video.")
             self.btn_continue.setEnabled(False)
-            QMessageBox.warning(self, "Validation", res.message)
+            message = res.message
+            if res.stage == "file" and "too short" in message.lower():
+                message += " Please record again and keep the camera running for the full duration."
+            QMessageBox.warning(self, "Validation", message)
 
     def _cancel_validation(self):
         try:
@@ -333,14 +340,13 @@ class VideoCheckinPage(QWidget):
         self.lbl_status.setText("Status: idle")
         self.btn_continue.setEnabled(False)
 
+    analysis_requested = Signal(str)
+
     @Slot()
     def continue_to_analysis(self):
         if not self.selected_path:
             return
-        QMessageBox.information(
-            self, "Confirmed",
-            "Video confirmed and validated:\n" + str(self.selected_path)
-            + "\n\nNext phase: frame > face > MediaPipe > CNN > VBS.")
+        self.analysis_requested.emit(self.selected_path)
 
     def _discard_temp_recording(self):
         if self._is_temp_recording and self.selected_path \
@@ -365,4 +371,3 @@ class VideoCheckinPage(QWidget):
                 pass
         finally:
             super().closeEvent(event)
-

@@ -1,0 +1,393 @@
+{
+  "run_at_utc": "2026-10-22T02:08:35.749683+00:00",
+  "project_root": "C:\\Users\\User\\Desktop\\J26-IT-328\\MindSync-Enterprise",
+  "model_checkpoint": "models/fer2013_cnn_best.pt",
+  "model_metadata": "models/fer2013_cnn_meta.json",
+  "emotion_label_order": [
+    "Angry",
+    "Disgust",
+    "Fear",
+    "Happy",
+    "Sad",
+    "Surprise",
+    "Neutral"
+  ],
+  "input_video": "C:\\Users\\User\\AppData\\Local\\Temp\\j26_e2e_synthetic_test.mp4",
+  "synthetic_note": "Synthetic FER2013 Training renders; not identifiable footage.",
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "message": "Video is valid.",
+    "props": {
+      "path": "C:\\Users\\User\\AppData\\Local\\Temp\\j26_e2e_synthetic_test.mp4",
+      "width": 480,
+      "height": 480,
+      "fps": 2.0,
+      "frame_count": 60,
+      "duration_s": 30.0,
+      "readable": true
+    }
+  },
+  "preprocessing": {
+    "ok": true,
+    "sampled_count": 60,
+    "scanned_count": 60,
+    "dropped_count": 0,
+    "src_fps": 2.0,
+    "duration_s": 30.0,
+    "errors": [],
+    "message": "Preprocessed 60 valid frames (60 scanned, 0 dropped)."
+  },
+  "face_stage": {
+    "ok": true,
+    "total": 60,
+    "with_face": 20,
+    "without_face": 40,
+    "coverage": 0.3333333333333333,
+    "errors": [],
+    "warnings": [
+      "MediaPipe unavailable/failed on some frames \u2014 crops kept for CNN anyway."
+    ],
+    "message": "Face found in 20/60 frames (33%). Warnings: MediaPipe unavailable/failed on some frames \u2014 crops kept for CNN anyway."
+  },
+  "cnn": {
+    "model_status": {
+      "loaded": true,
+      "path": "C:\\Users\\User\\Desktop\\J26-IT-328\\MindSync-Enterprise\\models/fer2013_cnn_best.pt",
+      "device": "cpu"
+    },
+    "checkpoint": "models/fer2013_cnn_best.pt",
+    "metadata": "models/fer2013_cnn_meta.json",
+    "load_time_s": 0.0279,
+    "frame_results": [
+      {
+        "index": 0,
+        "timestamp_s": 0.0,
+        "probs": [
+          0.0040177893824875355,
+          2.3438929929398e-05,
+          0.0019743074662983418,
+          0.16577689349651337,
+          0.012369472533464432,
+          0.001224375213496387,
+          0.8146136403083801
+        ],
+        "top_emotion": "Neutral",
+        "top_prob": 0.8146
+      },
+      {
+        "index": 1,
+        "timestamp_s": 0.5,
+        "probs": [
+          0.035353925079107285,
+          0.00519303884357214,
+          0.07372161000967026,
+          0.0170430988073349,
+          0.8293124437332153,
+          0.0007606986910104752,
+          0.03861524537205696
+        ],
+        "top_emotion": "Sad",
+        "top_prob": 0.8293
+      },
+      {
+        "index": 3,
+        "timestamp_s": 1.5,
+        "probs": [
+          0.24962745606899261,
+          0.014911782927811146,
+          0.3919655382633209,
+          0.014769784174859524,
+          0.2390209585428238,
+          0.017843548208475113,
+          0.07186094671487808
+        ],
+        "top_emotion": "Fear",
+        "top_prob": 0.392
+      },
+      {
+        "index": 10,
+        "timestamp_s": 5.0,
+        "probs": [
+          0.012299058958888054,
+          0.0010106374975293875,
+          0.8371008038520813,
+          0.0016705100424587727,
+          0.0037857419811189175,
+          0.14406533539295197,
+          6.797861715313047e-05
+        ],
+        "top_emotion": "Fear",
+        "top_prob": 0.8371
+      },
+      {
+        "index": 11,
+        "timestamp_s": 5.5,
+        "probs": [
+          4.429673936101608e-06,
+          5.092140487050756e-09,
+          6.428244887501933e-06,
+          0.9945751428604126,
+          8.202975550375413e-06,
+          9.256041084881872e-05,
+          0.005313116125762463
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.9946
+      },
+      {
+        "index": 12,
+        "timestamp_s": 6.0,
+        "probs": [
+          0.06387068331241608,
+          0.0016553514869883657,
+          0.2038702517747879,
+          0.08382875472307205,
+          0.36210379004478455,
+          0.009286260232329369,
+          0.27538496255874634
+        ],
+        "top_emotion": "Sad",
+        "top_prob": 0.3621
+      },
+      {
+        "index": 15,
+        "timestamp_s": 7.5,
+        "probs": [
+          0.4700273871421814,
+          0.058621615171432495,
+          0.16165472567081451,
+          0.0078476183116436,
+          0.2059907168149948,
+          0.026464683935046196,
+          0.06939324736595154
+        ],
+        "top_emotion": "Angry",
+        "top_prob": 0.47
+      },
+      {
+        "index": 17,
+        "timestamp_s": 8.5,
+        "probs": [
+          0.004950285889208317,
+          2.8941019536432577e-06,
+          0.0013915968593209982,
+          0.9874118566513062,
+          0.00011695516150211915,
+          0.0047475905157625675,
+          0.0013788073556497693
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.9874
+      },
+      {
+        "index": 18,
+        "timestamp_s": 9.0,
+        "probs": [
+          0.027303090319037437,
+          0.004789551254361868,
+          0.43919551372528076,
+          0.09186691790819168,
+          0.07668061554431915,
+          0.2955212891101837,
+          0.06464292854070663
+        ],
+        "top_emotion": "Fear",
+        "top_prob": 0.4392
+      },
+      {
+        "index": 20,
+        "timestamp_s": 10.0,
+        "probs": [
+          0.14109276235103607,
+          0.0108189033344388,
+          0.13978953659534454,
+          0.030224408954381943,
+          0.5291314125061035,
+          0.003508017398416996,
+          0.14543485641479492
+        ],
+        "top_emotion": "Sad",
+        "top_prob": 0.5291
+      },
+      {
+        "index": 21,
+        "timestamp_s": 10.5,
+        "probs": [
+          0.23636116087436676,
+          0.09030472487211227,
+          0.21513469517230988,
+          0.00967751257121563,
+          0.3677932620048523,
+          0.012995762750506401,
+          0.06773301959037781
+        ],
+        "top_emotion": "Sad",
+        "top_prob": 0.3678
+      },
+      {
+        "index": 24,
+        "timestamp_s": 12.0,
+        "probs": [
+          0.33553317189216614,
+          0.05815421789884567,
+          0.19326497614383698,
+          0.0018887874903157353,
+          0.35529178380966187,
+          0.0023033248726278543,
+          0.05356378108263016
+        ],
+        "top_emotion": "Sad",
+        "top_prob": 0.3553
+      },
+      {
+        "index": 26,
+        "timestamp_s": 13.0,
+        "probs": [
+          0.004068977665156126,
+          2.836803105310537e-05,
+          0.0014642564347013831,
+          0.9543172717094421,
+          0.0006188573897816241,
+          0.004619131330400705,
+          0.03488319739699364
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.9543
+      },
+      {
+        "index": 34,
+        "timestamp_s": 17.0,
+        "probs": [
+          0.029536958783864975,
+          0.0013042758218944073,
+          0.28219228982925415,
+          0.006624438799917698,
+          0.05959039926528931,
+          0.4003946781158447,
+          0.22035695612430573
+        ],
+        "top_emotion": "Surprise",
+        "top_prob": 0.4004
+      },
+      {
+        "index": 35,
+        "timestamp_s": 17.5,
+        "probs": [
+          0.03029557690024376,
+          0.00085903872968629,
+          0.04931074008345604,
+          0.49797287583351135,
+          0.027555199339985847,
+          0.18103216588497162,
+          0.21297451853752136
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.498
+      },
+      {
+        "index": 38,
+        "timestamp_s": 19.0,
+        "probs": [
+          0.006317236460745335,
+          0.00011981778516201302,
+          0.006481480784714222,
+          0.9645726084709167,
+          0.0010440805926918983,
+          0.008682817220687866,
+          0.012781971134245396
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.9646
+      },
+      {
+        "index": 41,
+        "timestamp_s": 20.5,
+        "probs": [
+          0.592860996723175,
+          0.03301730379462242,
+          0.057901181280612946,
+          0.00504264933988452,
+          0.11094948649406433,
+          0.008461290039122105,
+          0.1917671263217926
+        ],
+        "top_emotion": "Angry",
+        "top_prob": 0.5929
+      },
+      {
+        "index": 42,
+        "timestamp_s": 21.0,
+        "probs": [
+          0.0015051959780976176,
+          2.6536290533840656e-06,
+          0.00018673035083338618,
+          0.9978660941123962,
+          2.0764293822139734e-06,
+          0.00028290710179135203,
+          0.0001543922262499109
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.9979
+      },
+      {
+        "index": 47,
+        "timestamp_s": 23.5,
+        "probs": [
+          1.9986011466244236e-05,
+          1.0574735753721143e-08,
+          1.867841274361126e-05,
+          0.9948571920394897,
+          0.00010305331670679152,
+          2.943227082141675e-05,
+          0.004971708171069622
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.9949
+      },
+      {
+        "index": 58,
+        "timestamp_s": 29.0,
+        "probs": [
+          0.08165419101715088,
+          0.001829727552831173,
+          0.033589351922273636,
+          0.6832210421562195,
+          0.05397098883986473,
+          0.015887226909399033,
+          0.1298474818468094
+        ],
+        "top_emotion": "Happy",
+        "top_prob": 0.6832
+      }
+    ],
+    "classified_crops": 20,
+    "skipped_crops": 0,
+    "inference_time_s": 0.1038
+  },
+  "aggregation": {
+    "ok": true,
+    "n_frames": 20,
+    "probs": [
+      0.11633501425662204,
+      0.014132367651784168,
+      0.15451073229623102,
+      0.3755527672166225,
+      0.16177197240808636,
+      0.05691015391555656,
+      0.12078699225509743
+    ],
+    "top_emotion": "Happy",
+    "top_prob": 0.3756,
+    "note": "Mean of per-frame softmax distributions; model prediction only."
+  },
+  "vbs": {
+    "computed": false,
+    "error": "VBSSpecMissingError",
+    "message": "No approved VBS formula. Propose a transparent, configurable scoring method (range, weights, interpretation, limitations) for approval before implementing.",
+    "note": "VBS scoring formula not approved; compute_vbs always raises."
+  },
+  "timing": {
+    "total_time_s": 5.3159
+  }
+}

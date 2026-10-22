@@ -4,7 +4,7 @@ Automated tests cover validation (`pytest tests/unit -v`) but NOT the
 physical webcam. Work through this list with the app running:
 
 1. Launch: `python -m app.main` from `MindSync-Enterprise/`
-2. Upload valid ~30 s MP4 → expect "Passed", Continue enabled.
+2. Upload valid ~45 s MP4 → expect "Passed", Continue enabled.
 3. Upload wrong extension (.txt) → expect "Unsupported format".
 4. Upload 2 s clip → expect "too short".
 5. Start Recording → live preview + countdown from 30.

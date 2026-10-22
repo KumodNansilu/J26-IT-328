@@ -8,6 +8,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from app.config import VIDEO_MAX_DURATION_S, VIDEO_MIN_DURATION_S
+
 
 @dataclass
 class VideoProperties:
@@ -56,16 +58,15 @@ def validate_video_file(
     path: str,
     *,
     allowed_extensions=(".mp4", ".avi", ".mov"),
-    min_duration_s: float = 25.0,
-    max_duration_s: float = 35.0,
+    min_duration_s: float = VIDEO_MIN_DURATION_S,
+    max_duration_s: float = VIDEO_MAX_DURATION_S,
     duration_override_s: float | None = None,
 ) -> ValidationResult:
     """Validate an upload/recording WITHOUT starting AI analysis.
 
-    duration_override_s: trusted wall-clock seconds for a fresh webcam take.
-    Webcam mp4 headers can under-report (e.g. stamps 22s for a 30s capture
-    when capture ran slower than the header FPS), so the recorder passes its
-    measured wall time. Uploads pass None -> header duration is used.
+    duration_override_s: measured wall-clock seconds for a fresh webcam take.
+    The file must still be readable and contain frames; the override only
+    compensates for unreliable webcam FPS metadata. Uploads pass None.
     """
     errors: list[str] = []
     if not path:
@@ -84,6 +85,10 @@ def validate_video_file(
         return ValidationResult(False, errors, props)
     if props.width <= 0 or props.height <= 0:
         errors.append("Could not read video dimensions (corrupt header?).")
+    if props.frame_count <= 0:
+        errors.append("Video contains no frames.")
+    if props.fps <= 0:
+        errors.append("Video FPS metadata is missing or invalid.")
     hard_errors = list(errors)
     # Prefer recorder wall-clock when provided (fresh webcam take only).
     eff_duration = (
@@ -95,16 +100,16 @@ def validate_video_file(
         if eff_duration < min_duration_s:
             hard_errors.append(
                 f"Video too short: {eff_duration:.1f}s < minimum {min_duration_s:.0f}s "
-                "(target 30s ± tolerance)."
+                f"(target {min_duration_s + (max_duration_s - min_duration_s) / 2:.0f}s ± "
+                f"{(max_duration_s - min_duration_s) / 2:.0f}s)."
             )
         elif eff_duration > max_duration_s:
             hard_errors.append(
                 f"Video too long: {eff_duration:.1f}s > maximum {max_duration_s:.0f}s "
-                "(target 30s ± tolerance)."
+                f"(target {min_duration_s + (max_duration_s - min_duration_s) / 2:.0f}s ± "
+                f"{(max_duration_s - min_duration_s) / 2:.0f}s)."
             )
     else:
-        errors.append("Warning: duration unknown (missing FPS/metadata); continuing anyway.")
-        return ValidationResult(len(hard_errors) == 0, errors, props)
+        hard_errors.append("Video duration could not be measured from its metadata.")
+        return ValidationResult(False, hard_errors, props)
     return ValidationResult(len(hard_errors) == 0, hard_errors if hard_errors else errors, props)
-
-

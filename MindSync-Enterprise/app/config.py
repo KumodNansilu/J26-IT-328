@@ -5,8 +5,8 @@ Simple constants so thresholds are documented in one place.
 from __future__ import annotations
 
 # ---- Video check-in (VFEBA input stage) ----
-VIDEO_TARGET_DURATION_S: float = 30.0
-# Allowed tolerance around the 30 s target. Documented choice:
+VIDEO_TARGET_DURATION_S: float = 45.0
+# Allowed tolerance around the 45 s target. Documented choice:
 # ±5 s keeps check-ins comparable while allowing webcam timing jitter
 # and slightly short/long uploads without arbitrary rejection.
 VIDEO_DURATION_TOLERANCE_S: float = 5.0
@@ -19,10 +19,10 @@ SUPPORTED_VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov")
 SUPPORTED_VIDEO_EXTS = SUPPORTED_VIDEO_EXTENSIONS  # alias
 VIDEO_PICKER_FILTER = "Videos (*.mp4 *.avi *.mov)"
 
-# Frame sampling: process ~2 fps to keep a 30 s clip cheap
-# (30 s * 2 = ~60 frames) while handling any source FPS.
+# Frame sampling: process ~2 fps to keep a 45 s clip cheap
+# (45 s * 2 = ~90 frames) while handling any source FPS.
 FRAME_SAMPLE_FPS: float = 2.0
-# Cap kept frames in memory (60 expected at 2 fps/30 s; 120 headroom).
+# Cap kept frames in memory (90 expected at 2 fps/45 s; 120 headroom).
 FRAME_SAMPLE_MAX_FRAMES: int = 120
 # Minimum usable (face-containing) frames needed for a trustworthy result.
 MIN_USABLE_FRAMES: int = 10
@@ -46,4 +46,3 @@ WEBCAM_FRAME_WIDTH: int = 640
 WEBCAM_FRAME_HEIGHT: int = 480
 # mp4v is the most widely available mp4 codec on Windows OpenCV builds.
 WEBCAM_FOURCC: str = "mp4v"
-

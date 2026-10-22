@@ -1,7 +1,7 @@
 """In-memory frame sampling (no frame folders, no DB writes).
 
 Sampling strategy (documented choice):
-- Target ~2 fps (FRAME_SAMPLE_FPS) so a 30 s clip yields ~60 frames.
+- Target ~2 fps (FRAME_SAMPLE_FPS) so a 45 s clip yields ~90 frames.
   Why 2 fps: facial emotion changes slowly vs 30 fps video; 60 crops keep
   Haar + CNN cheap on a laptop CPU while still covering the whole clip.
   Adjust via app.config.FRAME_SAMPLE_FPS after testing.

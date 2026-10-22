@@ -1,0 +1,31 @@
+{
+  "label_order": [
+    "Angry",
+    "Disgust",
+    "Fear",
+    "Happy",
+    "Sad",
+    "Surprise",
+    "Neutral"
+  ],
+  "input": [
+    1,
+    48,
+    48
+  ],
+  "normalize": "x/255.0",
+  "seed": 42,
+  "epochs_run": 2,
+  "best_val_loss": 1.9105976819992065,
+  "smoke": true,
+  "class_counts": {
+    "Sad": 33,
+    "Fear": 34,
+    "Happy": 60,
+    "Neutral": 28,
+    "Surprise": 17,
+    "Angry": 24,
+    "Disgust": 4
+  },
+  "torch": "2.13.0+cpu"
+}
