@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .discordance_delta import calculate_discordance_delta
+from .config import MASKING_THRESHOLD
 
 
 class GatedMultimodalFusionEngine(nn.Module):
@@ -30,6 +31,14 @@ class GatedMultimodalFusionEngine(nn.Module):
     The gating network is a small MLP whose final hidden->3 layer is a
     ``nn.Linear`` followed by ``nn.Softmax(dim=-1)``. With ``hidden_dim=0``
     it degenerates to the architectural baseline ``nn.Linear(4, 3)``.
+
+    Dynamic Weight Adjustment:
+    - Forced Composure (Δ <= -MASKING_THRESHOLD, TBS highest):
+      Reduce text weight significantly, boost video/audio.
+    - Traditional Masking (Δ >= MASKING_THRESHOLD, TBS lowest):
+      Reduce text weight moderately.
+    - No Masking (|Δ| <= MASKING_THRESHOLD):
+      Use balanced weights (~33% each) since modalities agree.
     """
 
     def __init__(self, hidden_dim: int = 16) -> None:
@@ -136,8 +145,49 @@ class GatedMultimodalFusionEngine(nn.Module):
         # Clamp DSI to the valid [0, 1] range
         dsi = float(torch.clamp(dsi, 0.0, 1.0).item())
 
-        return (
-            dsi,
-            [float(w) for w in weights.squeeze(0)],
-            float(delta),
-        )
+        # Raw softmax weights from the trained gate (a fallback opinion).
+        raw_text, raw_video, raw_audio = [float(w) for w in weights.squeeze(0)]
+
+        # --- Dynamic weight adjustment for forced composure / masking ---
+        # The masking branches override the gate's raw weighting with a
+        # *deterministic* shift based on a neutral 1/3 baseline.  The trained
+        # gate saturates (w_text -> ~1.0) in forced-composure situations, so
+        # multiplying its raw weight against a reduction factor cannot push
+        # text back down toward ~0.10.  Starting the reduction from the neutral
+        # 1/3 baseline instead makes the forced-composure / masking emphasis
+        # reproducible regardless of the trained gate's raw output.
+        NEUTRAL = 1.0 / 3.0
+        if delta <= -MASKING_THRESHOLD and tbs >= vbs and tbs >= abs_:
+            # Forced Composure: distressed text, calm exterior.
+            # De-emphasize text; spread the remainder across video/audio.
+            reduction = min(abs(delta), 1.0)  # cap reduction factor at 1.0
+            w_text = max(0.10, NEUTRAL * (1.0 - reduction * 0.85))
+            remaining = 1.0 - w_text
+            vab = vbs + abs_
+            w_video = remaining * (vbs / vab) if vab > 0 else remaining * 0.5
+            w_audio = remaining - w_video
+        elif delta >= MASKING_THRESHOLD and tbs <= vbs and tbs <= abs_:
+            # Traditional Masking: fake-happy text, distressed exterior.
+            # De-emphasize text; spread the remainder across video/audio.
+            reduction = min(abs(delta), 1.0)  # cap reduction factor at 1.0
+            w_text = max(0.15, NEUTRAL * (1.0 - reduction * 0.70))
+            remaining = 1.0 - w_text
+            vab = vbs + abs_
+            w_video = remaining * (vbs / vab) if vab > 0 else remaining * 0.5
+            w_audio = remaining - w_video
+        else:
+            # No masking discordance: honor the trained gate's weighting.
+            w_text, w_video, w_audio = raw_text, raw_video, raw_audio
+
+        # Recompute DSI from the final (post-adjustment) weights so the reported
+        # DSI is consistent with the displayed weight breakdown.
+        dsi = w_text * tbs + w_video * vbs + w_audio * abs_
+        dsi = float(max(0.0, min(1.0, dsi)))
+
+        # Round to 3 decimals; compute the last weight as the complement so the
+        # three weights always sum to exactly 1.0 (avoids rounding drift).
+        w_text = round(w_text, 3)
+        w_video = round(w_video, 3)
+        w_audio = round(1.0 - w_text - w_video, 3)
+
+        return (dsi, [w_text, w_video, w_audio], float(delta))

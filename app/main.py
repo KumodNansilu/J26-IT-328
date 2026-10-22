@@ -485,15 +485,50 @@ class MainWindow(QMainWindow):
             vbs = self.vbs_input.value()
             abs_ = self.abs_input.value()
 
-            # Compute DSI using model or fallback to weighted average
+            # Compute DSI using the trained GMU model, else a heuristic fallback
             if self.model is not None:
                 dsi, weights, delta = self.model.predict(tbs, vbs, abs_)
             else:
-                # Fallback: simple average
-                dsi = (tbs + vbs + abs_) / 3.0
-                weights = [1/3, 1/3, 1/3]
+                # Fallback: dynamic weight adjustment for masking / forced composure.
                 delta = calculate_discordance_delta(tbs, vbs, abs_)
+                # Start from a neutral 1/3 baseline
+                w_text, w_video, w_audio = 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0
 
+                # Dynamic weight adjustment for forced composure / masking
+                if delta <= -MASKING_THRESHOLD and tbs >= vbs and tbs >= abs_:
+                    # Forced Composure: distressed text, calm exterior
+                    reduction = min(abs(delta), 1.0)
+                    w_text = max(0.10, w_text * (1.0 - reduction * 0.85))
+                    remaining = 1.0 - w_text
+                    vab = vbs + abs_
+                    if vab > 0:
+                        w_video = remaining * (vbs / vab)
+                        w_audio = remaining * (abs_ / vab)
+                    else:
+                        w_video = remaining * 0.5
+                        w_audio = remaining * 0.5
+                elif delta >= MASKING_THRESHOLD and tbs <= vbs and tbs <= abs_:
+                    # Traditional Masking: fake happy text, distressed exterior
+                    reduction = min(abs(delta), 1.0)
+                    w_text = max(0.15, w_text * (1.0 - reduction * 0.70))
+                    remaining = 1.0 - w_text
+                    vab = vbs + abs_
+                    if vab > 0:
+                        w_video = remaining * (vbs / vab)
+                        w_audio = remaining * (abs_ / vab)
+                    else:
+                        w_video = remaining * 0.5
+                        w_audio = remaining * 0.5
+
+                # Round to 3 decimals; compute last weight as complement
+                w_text = round(w_text, 3)
+                w_video = round(w_video, 3)
+                w_audio = round(1.0 - w_text - w_video, 3)
+                weights = [w_text, w_video, w_audio]
+                # Recompute DSI from the final weights so it is consistent with
+                # the displayed weight breakdown.
+                dsi = w_text * tbs + w_video * vbs + w_audio * abs_
+                dsi = max(0.0, min(1.0, dsi))
             # Classify risk tier
             risk_tier = classify_risk_tier(dsi)
 

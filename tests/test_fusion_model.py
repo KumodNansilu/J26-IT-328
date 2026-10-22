@@ -101,7 +101,11 @@ class TestGatedMultimodalFusionEngine:
     def test_dynamic_weight_shifting_during_forced_composure(self):
         """
         During Forced Composure (TBS high, VBS/ABS low),
-        the trained model should shift weights toward the text modality.
+        the heuristic derives emphasis from a neutral 1/3 baseline (not the
+        saturated trained gate) so it is reproducible regardless of raw weight.
+        Text is de-emphasized (~0.10-0.15) and the non-verbal modalities carry
+        the majority of the weight, consistent with the dashboard's
+        masking-aware weighting and recomputed DSI.
         """
         # Use the trained model with hidden_dim matching training
         self.model = load_trained_model()
@@ -110,8 +114,30 @@ class TestGatedMultimodalFusionEngine:
         dsi, weights, delta = self.model.predict(0.85, 0.20, 0.15)
         assert delta < -0.50  # Confirms forced composure scenario
 
-        # The trained model should assign higher weight to text (truthful modality)
-        assert weights[0] > weights[1] and weights[0] > weights[2]
+        # Forced composure de-emphasizes text: text weight is the LOWEST
+        assert weights[0] < weights[1] and weights[0] < weights[2]
+        assert abs(sum(weights) - 1.0) < 0.002  # weights sum to 1.0
+
+    def test_high_tbs_forced_composure_weights_match_terminal(self):
+        """
+        High-TBS forced-composure inputs (0.96 / 0.05 / 0.05) must display the
+        masking-aware forced-composure weights (~0.10 text / ~0.45 video /
+        ~0.45 audio) derived from the neutral 1/3 baseline, matching the
+        terminal/dashboard expectation.  Because text is de-emphasized, the
+        recomputed DSI drops and the risk tier stays GREEN.
+        """
+        self.model = load_trained_model()
+
+        dsi, weights, delta = self.model.predict(0.96, 0.05, 0.05)
+        assert delta < -0.50  # forced composure
+
+        # Forced-composure weights: ~0.10 text, ~0.45 video, ~0.45 audio
+        assert abs(weights[0] - 0.10) < 0.02
+        assert abs(weights[1] - 0.45) < 0.02
+        assert abs(weights[2] - 0.45) < 0.02
+        assert abs(sum(weights) - 1.0) < 0.002
+        # DSI recomputed from the low-text-weight breakdown stays green
+        assert dsi < 0.50
 
     def test_gradient_flow(self):
         """Model should support backpropagation."""
