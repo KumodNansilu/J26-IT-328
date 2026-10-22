@@ -1,0 +1,7 @@
+emotion,probability,probability_percent,predicted_class
+sadness,0.7283175587654114,72.83,sadness
+joy,0.1884763240814209,18.85,sadness
+neutral,0.05906341224908829,5.91,sadness
+fear,0.02265201136469841,2.27,sadness
+disgust,0.0011071834014728665,0.11,sadness
+anger,0.00038350620889104903,0.04,sadness
