@@ -1,2 +1,337 @@
+
+QMainWindow {
+    background-color: #F4F7FB;
+    color: #1E293B;
+    font-family: "Segoe UI";
+    font-size: 13px;
+}
+
+QWidget {
+    color: #1E293B;
+    font-family: "Segoe UI";
+}
+
+QFrame#Sidebar {
+    background-color: #172554;
+    border: none;
+}
+
+QLabel#BrandTitle {
+    color: #FFFFFF;
+    font-size: 25px;
+    font-weight: 700;
+}
+
+QLabel#BrandSubtitle {
+    color: #BFDBFE;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QLabel#NavHeading {
+    color: #93C5FD;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+QLabel#SidebarFooter {
+    color: #BFDBFE;
+    font-size: 11px;
+}
+
+QPushButton#NavButton {
+    background-color: transparent;
+    color: #E2E8F0;
+    text-align: left;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 7px;
+}
+
+QPushButton#NavButton:hover {
+    background-color: #263B70;
+    color: #FFFFFF;
+}
+
+QPushButton#NavButton[active="true"] {
+    background-color: #2563EB;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+QFrame#TopBar {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
+}
+
+QLabel#TopBarTitle {
+    color: #0F172A;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+QLabel#ConnectionStatus {
+    color: #475569;
+}
+
+QLabel#PageTitle {
+    color: #0F172A;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+QLabel#PageSubtitle {
+    color: #64748B;
+}
+
+QFrame#ContentCard {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+}
+
+QLabel#SectionTitle {
+    color: #0F172A;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+QLabel#FileLabel {
+    color: #334155;
+    background-color: #F8FAFC;
+    border: 1px dashed #CBD5E1;
+    border-radius: 7px;
+    padding: 10px;
+}
+
+QLabel#PredictedEmotion {
+    color: #2563EB;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+QLabel#FeatureValue {
+    color: #1D4ED8;
+    font-weight: 600;
+}
+
+QLabel#NoticeLabel {
+    color: #92400E;
+    background-color: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+QPushButton#PrimaryButton {
+    background-color: #2563EB;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 7px;
+    padding: 10px 16px;
+    font-weight: 600;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: #1D4ED8;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background-color: #CBD5E1;
+    color: #64748B;
+}
+
+QPushButton#SecondaryButton {
+    background-color: #FFFFFF;
+    color: #1D4ED8;
+    border: 1px solid #BFDBFE;
+    border-radius: 7px;
+    padding: 9px 14px;
+}
+
+QProgressBar {
+    background-color: #E2E8F0;
+    border: none;
+    border-radius: 5px;
+    min-height: 12px;
+    max-height: 12px;
+}
+
+QProgressBar::chunk {
+    background-color: #2563EB;
+    border-radius: 5px;
+}
+
+QScrollArea {
+    background-color: #F4F7FB;
+    border: none;
+}
+
+QMessageBox {
+    background-color: #FFFFFF;
+}
+
+QMessageBox QLabel {
+    color: #1E293B;
+}
 /* MindSync main stylesheet */
 QMainWindow { background: #F5F7FA; }
+
+/* Fix Audio Analysis content background and text contrast */
+
+QWidget#AudioAnalysisPage {
+    background-color: #F4F7FB;
+    color: #1E293B;
+}
+
+QScrollArea {
+    background-color: #F4F7FB;
+    border: none;
+}
+
+QScrollArea QWidget {
+    background-color: #F4F7FB;
+    color: #1E293B;
+}
+
+QFrame#ContentCard {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+}
+
+QLabel#PageTitle {
+    color: #0F172A;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+QLabel#PageSubtitle {
+    color: #64748B;
+}
+
+
+/* Final UI polish */
+
+QScrollArea QWidget {
+    background-color: transparent;
+}
+
+QScrollArea QWidget#qt_scrollarea_viewport {
+    background-color: #F4F7FB;
+}
+
+QLabel {
+    background-color: transparent;
+    border: none;
+}
+
+QLabel#PageTitle {
+    color: #0F172A;
+    background-color: transparent;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+QLabel#PageSubtitle {
+    color: #64748B;
+    background-color: transparent;
+}
+
+QLabel#SectionTitle {
+    color: #0F172A;
+    background-color: transparent;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+QLabel#FileLabel {
+    background-color: #F8FAFC;
+    border: 1px dashed #CBD5E1;
+    border-radius: 7px;
+    padding: 10px;
+}
+
+QLabel#PredictedEmotion {
+    color: #2563EB;
+    background-color: transparent;
+    font-size: 27px;
+    font-weight: 700;
+}
+
+QLabel#FeatureValue {
+    color: #1D4ED8;
+    background-color: transparent;
+    font-weight: 600;
+}
+
+QLabel#NoticeLabel {
+    color: #92400E;
+    background-color: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+QScrollBar:vertical {
+    background-color: #F4F7FB;
+    width: 7px;
+    margin: 0;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #CBD5E1;
+    border-radius: 3px;
+    min-height: 30px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    border: none;
+}
+
+
+/* Acoustic feature metric cards */
+
+QFrame#FeatureCard {
+    background-color: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 9px;
+}
+
+QLabel#FeatureName {
+    color: #475569;
+    background-color: transparent;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#FeatureValue {
+    color: #2563EB;
+    background-color: transparent;
+    font-size: 23px;
+    font-weight: 700;
+}
+
+QLabel#FeatureUnit {
+    color: #64748B;
+    background-color: transparent;
+    font-size: 11px;
+}
+
+
+QProgressBar#AnalysisProgressBar {
+    background-color: #E2E8F0;
+    border: none;
+    border-radius: 4px;
+    min-height: 8px;
+    max-height: 8px;
+}
+
+QProgressBar#AnalysisProgressBar::chunk {
+    background-color: #2563EB;
+    border-radius: 4px;
+}
+

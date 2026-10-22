@@ -1,0 +1,7 @@
+emotion,probability,probability_percent,predicted_class
+fear,0.8858913779258728,88.59,fear
+sadness,0.11090409755706787,11.09,fear
+disgust,0.003204538021236658,0.32,fear
+joy,6.326452556271178e-11,0.0,fear
+anger,1.2049783913725687e-12,0.0,fear
+neutral,2.938530088746408e-14,0.0,fear
